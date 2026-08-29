@@ -22,8 +22,10 @@ fallthrough = true
 # emits tags pointing at the public hostname.
 PUBLIC_BASE = "https://cdn.jakelabate.com/open-graph"
 
-# Optional. Restrict which hosts a logo may be fetched from.
-# LOGO_ALLOWED_HOSTS = "jakelabate.com,cdn.jakelabate.com"
+# Which hosts a logo may be fetched from. Without this the render endpoint is
+# an open image proxy: anyone can pass ?logo=<any https url> and have the
+# worker fetch it on this account. Subdomains of a listed host are accepted.
+LOGO_ALLOWED_HOSTS = "jakelabate.com"
 
 # Optional. Set with: wrangler secret put SIGNING_KEY
 # When present, /v1/og.png requires a matching sig and /v1/tags mints it.
