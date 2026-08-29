@@ -4,11 +4,24 @@
  * No JSX, no build step. Each template is a pure function of (spec, tokens)
  * that returns a Satori node, so templates stay testable in isolation and a
  * new layout is one function plus one registry entry.
+ *
+ * Every size comes from src/type.js. Templates never invent a number, because
+ * the legibility floor is only enforceable if there is one place to enforce
+ * it. Text goes through `text()`, which records the size it used so the test
+ * suite can assert nothing on a rendered card falls below that floor.
  */
+
+import { SCALE, TITLE_BASE, titleSize } from './type.js';
 
 const DISPLAY = 'Space Grotesk';
 const BODY = 'IBM Plex Sans';
 const MONO = 'IBM Plex Mono';
+
+/** Sizes used by the render currently being built. Reset by buildTree. */
+let used = [];
+export function sizesUsed() {
+  return used.slice();
+}
 
 const h = (type, props = {}, ...children) => ({
   type,
@@ -18,21 +31,22 @@ const h = (type, props = {}, ...children) => ({
 const box = (style, ...children) =>
   h('div', { style: { display: 'flex', ...style } }, ...children.filter(Boolean));
 
-const text = (value, style) => h('div', { style: { display: 'flex', ...style } }, value);
+/**
+ * Text leaves render as blocks, not flex containers. Satori only honours
+ * lineClamp on a block, and silently ignores it on a flex box, which is what
+ * let long headlines run three times past the bottom of the card.
+ */
+function text(value, style) {
+  if (style && style.fontSize) used.push(style.fontSize);
+  return h('div', { style: { display: 'block', ...style } }, value);
+}
 
 /**
- * Pick a title size that keeps long headlines inside the card without a
- * measurement pass. Tuned against the Space Grotesk 700 metrics.
+ * Clamp rather than shrink. Satori drops the overflow and appends an ellipsis,
+ * which keeps the type at a size someone can actually read in a thread.
  */
-function titleSize(title, k, base = 78) {
-  const len = title.length;
-  let size = base;
-  if (len > 30) size = base * 0.9;
-  if (len > 50) size = base * 0.76;
-  if (len > 75) size = base * 0.62;
-  if (len > 105) size = base * 0.52;
-  if (len > 140) size = base * 0.44;
-  return Math.round(size * k);
+function clamped(lines) {
+  return { lineClamp: lines, textOverflow: 'ellipsis' };
 }
 
 /** The resolved logo, or nothing. A logo that failed to load is simply absent. */
@@ -102,7 +116,7 @@ function accentBar(tokens, k) {
       top: 0,
       left: 0,
       right: 0,
-      height: Math.round(10 * k),
+      height: Math.round(12 * k),
       backgroundColor: tokens.accent,
     },
   });
@@ -123,7 +137,9 @@ function shell(spec, tokens, inner, { bar = true } = {}) {
         display: 'flex',
         position: 'relative',
         width: spec.width,
-        height: spec.height,
+        // Left unset when measuring, so satori reports the natural height of
+        // the content and the test suite can prove nothing overflows.
+        ...(spec.measure ? {} : { height: spec.height }),
         backgroundColor: tokens.bg,
         color: tokens.fg,
         fontFamily: BODY,
@@ -134,72 +150,97 @@ function shell(spec, tokens, inner, { bar = true } = {}) {
   );
 }
 
-function eyebrowRow(spec, tokens, k) {
-  if (!spec.eyebrow && !spec.badge) return null;
-  const kids = [];
-  if (spec.eyebrow) {
-    kids.push(
-      text(spec.eyebrow.toUpperCase(), {
-        fontFamily: MONO,
-        fontSize: Math.round(22 * k),
-        letterSpacing: Math.round(2 * k),
-        color: tokens.accent,
-      })
-    );
-  }
-  if (spec.badge) {
-    kids.push(
-      text(spec.badge, {
-        fontFamily: MONO,
-        fontSize: Math.round(19 * k),
-        color: tokens.bg,
-        backgroundColor: tokens.accent,
-        padding: `${Math.round(6 * k)}px ${Math.round(14 * k)}px`,
-        borderRadius: Math.round(6 * k),
-      })
-    );
-  }
-  return box({ alignItems: 'center', gap: Math.round(18 * k) }, ...kids);
+/**
+ * The badge is the only label element on a card now. It survives a message
+ * preview because it is a solid accent block, not small grey type.
+ */
+function badgePill(spec, tokens, k) {
+  if (!spec.badge) return null;
+  return text(spec.badge, {
+    fontFamily: MONO,
+    fontSize: Math.round(SCALE.badge * k),
+    color: tokens.bg,
+    backgroundColor: tokens.accent,
+    // Text leaves are blocks now, and a block in a flex column stretches to
+    // the full width. Only the badge has a background, so only the badge shows
+    // it, as a pill running the whole card.
+    alignSelf: 'flex-start',
+    padding: `${Math.round(10 * k)}px ${Math.round(22 * k)}px`,
+    borderRadius: Math.round(8 * k),
+  });
+}
+
+function titleText(spec, tokens, k, lines = 3, base) {
+  return text(spec.title, {
+    fontFamily: DISPLAY,
+    fontSize: titleSize(spec.title, k, base || TITLE_BASE[spec.template] || TITLE_BASE.editorial),
+    lineHeight: 1.08,
+    letterSpacing: Math.round(-2 * k),
+    color: tokens.fg,
+    ...clamped(lines),
+  });
+}
+
+function subtitleText(spec, tokens, k, { lines = 2, tight = false, color } = {}) {
+  if (!spec.subtitle) return null;
+  return text(spec.subtitle, {
+    fontSize: Math.round((tight ? SCALE.subtitleTight : SCALE.subtitle) * k),
+    lineHeight: 1.32,
+    color: color || tokens.muted,
+    ...clamped(lines),
+  });
 }
 
 /** Footer line, with the logo taking the right edge when one is present. */
 function footerRow(spec, tokens, k, { withLogo = true } = {}) {
   const left = [];
   if (spec.site) {
-    left.push(text(spec.site, { fontFamily: MONO, fontSize: Math.round(24 * k), color: tokens.fg }));
+    left.push(
+      text(spec.site, {
+        fontFamily: MONO,
+        fontSize: Math.round(SCALE.footer * k),
+        color: tokens.fg,
+        ...clamped(1),
+      })
+    );
   }
   if (spec.site && spec.author) {
-    left.push(text('/', { fontSize: Math.round(24 * k), color: tokens.muted }));
+    left.push(text('/', { fontSize: Math.round(SCALE.footer * k), color: tokens.muted }));
   }
   if (spec.author) {
-    left.push(text(spec.author, { fontSize: Math.round(24 * k), color: tokens.muted }));
+    left.push(
+      text(spec.author, {
+        fontSize: Math.round(SCALE.footer * k),
+        color: tokens.muted,
+        ...clamped(1),
+      })
+    );
   }
 
-  const mark = withLogo ? logoMark(spec, k, Math.min(spec.logoWidth, 140)) : null;
+  const mark = withLogo ? logoMark(spec, k, Math.min(spec.logoWidth, 150)) : null;
   if (!left.length && !mark) return null;
 
   return box(
     {
       alignItems: 'center',
       justifyContent: 'space-between',
-      borderTop: `${Math.max(1, Math.round(2 * k))}px solid ${tokens.rule}`,
-      paddingTop: Math.round(26 * k),
+      borderTop: `${Math.max(2, Math.round(3 * k))}px solid ${tokens.rule}`,
+      paddingTop: Math.round(20 * k),
     },
-    box({ alignItems: 'center', gap: Math.round(14 * k) }, ...left),
+    box({ alignItems: 'center', gap: Math.round(16 * k) }, ...left),
     mark
   );
 }
 
 function editorial(spec, tokens) {
   const k = spec.width / 1200;
-  const pad = Math.round(72 * k);
-  const head = [];
+  const pad = Math.round(50 * k);
 
-  // With a logo the mark leads and the eyebrow sits beside it, so the two
-  // never stack into two near identical label rows.
-  const eyebrow = eyebrowRow(spec, tokens, k);
   const mark = logoMark(spec, k);
-  if (mark || eyebrow) {
+  const badge = badgePill(spec, tokens, k);
+
+  const head = [];
+  if (mark || badge) {
     head.push(
       box(
         {
@@ -208,37 +249,20 @@ function editorial(spec, tokens) {
           alignSelf: spec.align === 'center' ? 'center' : 'flex-start',
         },
         mark,
-        eyebrow
+        badge
       )
     );
   }
-
-  head.push(
-    text(spec.title, {
-      fontFamily: DISPLAY,
-      fontSize: titleSize(spec.title, k),
-      lineHeight: 1.08,
-      letterSpacing: Math.round(-1.5 * k),
-      color: tokens.fg,
-    })
-  );
-
-  if (spec.subtitle) {
-    head.push(
-      text(spec.subtitle, {
-        fontSize: Math.round(30 * k),
-        lineHeight: 1.4,
-        color: tokens.muted,
-        maxWidth: '92%',
-      })
-    );
-  }
+  // Three lines only when there is no subtitle competing for the space.
+  head.push(titleText(spec, tokens, k, spec.subtitle ? 2 : 3));
+  const sub = subtitleText(spec, tokens, k, { lines: 2 });
+  if (sub) head.push(sub);
 
   const body = box(
     {
       flexDirection: 'column',
       justifyContent: 'center',
-      gap: Math.round(26 * k),
+      gap: Math.round(20 * k),
       flexGrow: 1,
       alignItems: spec.align === 'center' ? 'center' : 'flex-start',
       textAlign: spec.align === 'center' ? 'center' : 'left',
@@ -256,7 +280,7 @@ function editorial(spec, tokens) {
         width: '100%',
         height: '100%',
         padding: pad,
-        paddingTop: Math.round(pad * 1.1),
+        paddingTop: Math.round(pad * 1.15),
       },
       body,
       footerRow(spec, tokens, k, { withLogo: false })
@@ -266,30 +290,37 @@ function editorial(spec, tokens) {
 
 function stat(spec, tokens) {
   const k = spec.width / 1200;
-  const pad = Math.round(72 * k);
+  const pad = Math.round(46 * k);
 
-  const cells = spec.stats.map((s) =>
+  // Three is the most that stays readable once the card is a thumbnail. A
+  // fourth column would push each value below the floor.
+  const cells = spec.stats.slice(0, 3).map((s) =>
     box(
       {
         flexDirection: 'column',
-        gap: Math.round(6 * k),
-        borderLeft: `${Math.max(2, Math.round(4 * k))}px solid ${tokens.accent}`,
-        paddingLeft: Math.round(20 * k),
+        gap: Math.round(8 * k),
+        borderLeft: `${Math.max(3, Math.round(6 * k))}px solid ${tokens.accent}`,
+        paddingLeft: Math.round(24 * k),
       },
-      text(s.value, { fontFamily: DISPLAY, fontSize: Math.round(56 * k), color: tokens.fg }),
-      text(s.label, { fontFamily: MONO, fontSize: Math.round(19 * k), color: tokens.muted })
+      text(s.value, {
+        fontFamily: DISPLAY,
+        fontSize: Math.round(SCALE.statValue * k),
+        color: tokens.fg,
+        ...clamped(1),
+      }),
+      text(s.label, {
+        fontFamily: MONO,
+        fontSize: Math.round(SCALE.statLabel * k),
+        color: tokens.muted,
+        ...clamped(1),
+      })
     )
   );
 
   const head = box(
-    { flexDirection: 'column', gap: Math.round(22 * k) },
-    eyebrowRow(spec, tokens, k),
-    text(spec.title, {
-      fontFamily: DISPLAY,
-      fontSize: titleSize(spec.title, k, 64),
-      lineHeight: 1.1,
-      letterSpacing: Math.round(-1.2 * k),
-    })
+    { flexDirection: 'column', gap: Math.round(18 * k), alignItems: 'flex-start' },
+    badgePill(spec, tokens, k),
+    titleText(spec, tokens, k, 2)
   );
 
   return shell(
@@ -302,11 +333,11 @@ function stat(spec, tokens) {
         width: '100%',
         height: '100%',
         padding: pad,
-        paddingTop: Math.round(pad * 1.1),
+        paddingTop: Math.round(pad * 1.15),
         justifyContent: 'space-between',
       },
       head,
-      box({ gap: Math.round(44 * k), flexGrow: 1, alignItems: 'center' }, ...cells),
+      box({ gap: Math.round(48 * k), flexGrow: 1, alignItems: 'center' }, ...cells),
       footerRow(spec, tokens, k)
     )
   );
@@ -316,31 +347,17 @@ function minimal(spec, tokens) {
   const k = spec.width / 1200;
   const kids = [
     logoMark(spec, k),
-    text(spec.title, {
-      fontFamily: DISPLAY,
-      fontSize: titleSize(spec.title, k, 94),
-      lineHeight: 1.05,
-      letterSpacing: Math.round(-2 * k),
-      textAlign: 'center',
-    }),
+    titleText(spec, tokens, k, spec.subtitle ? 2 : 3),
+    subtitleText(spec, tokens, k, { lines: 2 }),
   ];
-  if (spec.subtitle) {
-    kids.push(
-      text(spec.subtitle, {
-        fontSize: Math.round(30 * k),
-        color: tokens.muted,
-        textAlign: 'center',
-        maxWidth: '80%',
-      })
-    );
-  }
   if (spec.site) {
     kids.push(
       text(spec.site, {
         fontFamily: MONO,
-        fontSize: Math.round(22 * k),
+        fontSize: Math.round(SCALE.footer * k),
         color: tokens.accent,
-        marginTop: Math.round(14 * k),
+        marginTop: Math.round(10 * k),
+        ...clamped(1),
       })
     );
   }
@@ -354,10 +371,11 @@ function minimal(spec, tokens) {
         flexDirection: 'column',
         width: '100%',
         height: '100%',
-        padding: Math.round(80 * k),
+        padding: Math.round(56 * k),
         alignItems: 'center',
         justifyContent: 'center',
-        gap: Math.round(24 * k),
+        textAlign: 'center',
+        gap: Math.round(18 * k),
       },
       ...kids
     )
@@ -366,16 +384,16 @@ function minimal(spec, tokens) {
 
 function code(spec, tokens) {
   const k = spec.width / 1200;
-  const pad = Math.round(64 * k);
+  const pad = Math.round(38 * k);
 
   const chrome = box(
-    { alignItems: 'center', gap: Math.round(10 * k) },
+    { alignItems: 'center', gap: Math.round(14 * k) },
     ...['#ff5f57', '#febc2e', '#28c840'].map((c) =>
       h('div', {
         style: {
           display: 'flex',
-          width: Math.round(14 * k),
-          height: Math.round(14 * k),
+          width: Math.round(20 * k),
+          height: Math.round(20 * k),
           borderRadius: 999,
           backgroundColor: c,
         },
@@ -385,19 +403,23 @@ function code(spec, tokens) {
 
   const inner = [
     box(
-      { alignItems: 'center', justifyContent: 'space-between' },
+      { alignItems: 'center', justifyContent: 'space-between', height: Math.round(28 * k) },
       chrome,
-      text(spec.badge || spec.eyebrow || '', {
-        fontFamily: MONO,
-        fontSize: Math.round(20 * k),
-        color: tokens.muted,
-      })
+      spec.badge
+        ? text(spec.badge, {
+            fontFamily: MONO,
+            fontSize: Math.round(SCALE.bylineMeta * k),
+            color: tokens.muted,
+            ...clamped(1),
+          })
+        : null
     ),
     text(spec.title, {
       fontFamily: MONO,
-      fontSize: titleSize(spec.title, k, 46),
-      lineHeight: 1.35,
+      fontSize: titleSize(spec.title, k, TITLE_BASE.code),
+      lineHeight: 1.25,
       color: tokens.fg,
+      ...clamped(2),
     }),
   ];
 
@@ -405,9 +427,10 @@ function code(spec, tokens) {
     inner.push(
       text(spec.subtitle, {
         fontFamily: MONO,
-        fontSize: Math.round(24 * k),
-        lineHeight: 1.45,
+        fontSize: Math.round(SCALE.codeBody * k),
+        lineHeight: 1.3,
         color: tokens.accent,
+        ...clamped(1),
       })
     );
   }
@@ -422,17 +445,17 @@ function code(spec, tokens) {
         width: '100%',
         height: '100%',
         padding: pad,
-        paddingTop: Math.round(pad * 1.2),
-        gap: Math.round(30 * k),
+        paddingTop: Math.round(pad * 1.25),
+        gap: Math.round(14 * k),
       },
       box(
         {
           flexDirection: 'column',
-          gap: Math.round(28 * k),
+          gap: Math.round(16 * k),
           backgroundColor: tokens.bgAlt,
-          border: `${Math.max(1, Math.round(2 * k))}px solid ${tokens.rule}`,
-          borderRadius: Math.round(18 * k),
-          padding: Math.round(40 * k),
+          border: `${Math.max(2, Math.round(3 * k))}px solid ${tokens.rule}`,
+          borderRadius: Math.round(20 * k),
+          padding: Math.round(26 * k),
           flexGrow: 1,
         },
         ...inner
@@ -445,27 +468,28 @@ function code(spec, tokens) {
 /** Panel on the left carrying the mark, content on the right. */
 function split(spec, tokens) {
   const k = spec.width / 1200;
-  const panelWidth = Math.round(spec.width * 0.32);
+  const panelWidth = Math.round(spec.width * 0.3);
 
   const panel = box(
     {
       width: panelWidth,
       height: '100%',
       backgroundColor: tokens.bgAlt,
-      borderRight: `${Math.max(2, Math.round(6 * k))}px solid ${tokens.accent}`,
+      borderRight: `${Math.max(3, Math.round(8 * k))}px solid ${tokens.accent}`,
       alignItems: 'center',
       justifyContent: 'center',
       flexDirection: 'column',
       gap: Math.round(20 * k),
-      padding: Math.round(40 * k),
+      padding: Math.round(36 * k),
     },
-    logoMark(spec, k, Math.min(spec.logoWidth * 1.6, (panelWidth - Math.round(80 * k)) / k)),
+    logoMark(spec, k, Math.min(spec.logoWidth * 1.8, (panelWidth - Math.round(72 * k)) / k)),
     !spec.logo && spec.site
       ? text(spec.site, {
           fontFamily: DISPLAY,
-          fontSize: Math.round(34 * k),
+          fontSize: Math.round(52 * k),
           color: tokens.fg,
           textAlign: 'center',
+          ...clamped(2),
         })
       : null
   );
@@ -474,7 +498,7 @@ function split(spec, tokens) {
   // width of auto, so a long unbroken headline would otherwise push straight
   // through the right edge of the card.
   const contentWidth = spec.width - panelWidth;
-  const kContent = (contentWidth - Math.round(128 * k)) / 1200;
+  const kContent = (contentWidth - Math.round(112 * k)) / 1200;
 
   const content = box(
     {
@@ -482,24 +506,24 @@ function split(spec, tokens) {
       justifyContent: 'center',
       gap: Math.round(22 * k),
       width: contentWidth,
-      padding: Math.round(64 * k),
+      padding: Math.round(56 * k),
     },
-    eyebrowRow(spec, tokens, k),
+    badgePill(spec, tokens, k),
     text(spec.title, {
       fontFamily: DISPLAY,
-      fontSize: titleSize(spec.title, kContent, 92),
+      fontSize: titleSize(spec.title, kContent, 150),
       lineHeight: 1.1,
-      letterSpacing: Math.round(-1.2 * k),
+      letterSpacing: Math.round(-1.6 * k),
+      ...clamped(3),
     }),
-    spec.subtitle
-      ? text(spec.subtitle, { fontSize: Math.round(27 * k), lineHeight: 1.4, color: tokens.muted })
-      : null,
+    subtitleText(spec, tokens, k, { lines: 2, tight: true }),
     spec.logo && spec.site
       ? text(spec.site, {
           fontFamily: MONO,
-          fontSize: Math.round(22 * k),
+          fontSize: Math.round(SCALE.bylineMeta * k),
           color: tokens.accent,
-          marginTop: Math.round(8 * k),
+          marginTop: Math.round(6 * k),
+          ...clamped(1),
         })
       : null
   );
@@ -515,18 +539,25 @@ function split(spec, tokens) {
 /** Pull quote, with the attribution carried by author, meta and site. */
 function quote(spec, tokens) {
   const k = spec.width / 1200;
-  const pad = Math.round(80 * k);
+  const pad = Math.round(50 * k);
 
   const attribution = [];
   if (spec.author) {
-    attribution.push(text(spec.author, { fontSize: Math.round(26 * k), color: tokens.fg }));
+    attribution.push(
+      text(spec.author, {
+        fontSize: Math.round(SCALE.byline * k),
+        color: tokens.fg,
+        ...clamped(1),
+      })
+    );
   }
   if (spec.meta || spec.site) {
     attribution.push(
       text(spec.meta || spec.site, {
         fontFamily: MONO,
-        fontSize: Math.round(21 * k),
+        fontSize: Math.round(SCALE.bylineMeta * k),
         color: tokens.muted,
+        ...clamped(1),
       })
     );
   }
@@ -541,61 +572,49 @@ function quote(spec, tokens) {
         width: '100%',
         height: '100%',
         padding: pad,
-        paddingTop: Math.round(pad * 0.9),
+        paddingTop: Math.round(pad * 1.1),
         justifyContent: 'center',
-        gap: Math.round(28 * k),
+        gap: Math.round(20 * k),
       },
       text('\u201C', {
         fontFamily: DISPLAY,
-        fontSize: Math.round(150 * k),
+        fontSize: Math.round(SCALE.quoteGlyph * k),
         lineHeight: 1,
-        height: Math.round(84 * k),
         color: tokens.accent,
       }),
-      text(spec.title, {
-        fontFamily: DISPLAY,
-        fontSize: titleSize(spec.title, k, 60),
-        lineHeight: 1.22,
-        letterSpacing: Math.round(-0.8 * k),
-      }),
+      titleText(spec, tokens, k, 3, TITLE_BASE.quote),
       attribution.length
         ? box(
             {
               alignItems: 'center',
-              gap: Math.round(18 * k),
-              borderLeft: `${Math.max(2, Math.round(4 * k))}px solid ${tokens.accent}`,
-              paddingLeft: Math.round(20 * k),
+              gap: Math.round(20 * k),
+              borderLeft: `${Math.max(3, Math.round(6 * k))}px solid ${tokens.accent}`,
+              paddingLeft: Math.round(24 * k),
             },
-            logoMark(spec, k, Math.min(spec.logoWidth, 64)),
-            box({ flexDirection: 'column', gap: Math.round(4 * k) }, ...attribution)
+            logoMark(spec, k, Math.min(spec.logoWidth, 80)),
+            box({ flexDirection: 'column', gap: Math.round(6 * k) }, ...attribution)
           )
         : null
     )
   );
 }
 
-/** Compact horizontal lockup. Holds up at small preview sizes. */
+/** Compact horizontal lockup. Holds up best of all of them at thumbnail size. */
 function banner(spec, tokens) {
   const k = spec.width / 1200;
 
   const copy = box(
-    { flexDirection: 'column', gap: Math.round(12 * k), flexGrow: 1 },
-    eyebrowRow(spec, tokens, k),
-    text(spec.title, {
-      fontFamily: DISPLAY,
-      fontSize: titleSize(spec.title, k, 66),
-      lineHeight: 1.08,
-      letterSpacing: Math.round(-1.4 * k),
-    }),
-    spec.subtitle
-      ? text(spec.subtitle, { fontSize: Math.round(28 * k), lineHeight: 1.35, color: tokens.muted })
-      : null,
+    { flexDirection: 'column', gap: Math.round(16 * k), flexGrow: 1 },
+    badgePill(spec, tokens, k),
+    titleText(spec, tokens, k, 2),
+    subtitleText(spec, tokens, k, { lines: 2, tight: true }),
     spec.site
       ? text(spec.site, {
           fontFamily: MONO,
-          fontSize: Math.round(21 * k),
+          fontSize: Math.round(SCALE.bylineMeta * k),
           color: tokens.accent,
-          marginTop: Math.round(6 * k),
+          marginTop: Math.round(4 * k),
+          ...clamped(1),
         })
       : null
   );
@@ -609,62 +628,68 @@ function banner(spec, tokens) {
         width: '100%',
         height: '100%',
         alignItems: 'center',
-        gap: Math.round(48 * k),
-        padding: Math.round(72 * k),
+        gap: Math.round(40 * k),
+        padding: Math.round(54 * k),
       },
-      logoMark(spec, k, Math.max(spec.logoWidth, 120)),
+      logoMark(spec, k, Math.max(spec.logoWidth, 150)),
       copy
     ),
     { bar: false }
   );
 }
 
-/** Byline card: category, headline, then author, date and read time. */
+/** Byline card: site, headline, then author, date and read time. */
 function article(spec, tokens) {
   const k = spec.width / 1200;
-  const pad = Math.round(72 * k);
-  const dot = () => text('\u00B7', { fontSize: Math.round(25 * k), color: tokens.rule });
+  const pad = Math.round(54 * k);
+  const dot = () => text('\u00B7', { fontSize: Math.round(SCALE.byline * k), color: tokens.rule });
 
   const byline = [];
   if (spec.author) {
-    byline.push(text(spec.author, { fontSize: Math.round(25 * k), color: tokens.fg }));
+    byline.push(
+      text(spec.author, { fontSize: Math.round(SCALE.byline * k), color: tokens.fg, ...clamped(1) })
+    );
   }
   if (spec.date) {
     if (byline.length) byline.push(dot());
-    byline.push(text(spec.date, { fontSize: Math.round(25 * k), color: tokens.muted }));
+    byline.push(
+      text(spec.date, {
+        fontSize: Math.round(SCALE.byline * k),
+        color: tokens.muted,
+        ...clamped(1),
+      })
+    );
   }
   if (spec.meta) {
     if (byline.length) byline.push(dot());
     byline.push(
-      text(spec.meta, { fontFamily: MONO, fontSize: Math.round(21 * k), color: tokens.muted })
+      text(spec.meta, {
+        fontFamily: MONO,
+        fontSize: Math.round(SCALE.bylineMeta * k),
+        color: tokens.muted,
+        ...clamped(1),
+      })
     );
   }
 
   const head = box(
     { alignItems: 'center', justifyContent: 'space-between' },
-    eyebrowRow(spec, tokens, k) ||
+    badgePill(spec, tokens, k) ||
       (spec.site
-        ? text(spec.site, { fontFamily: MONO, fontSize: Math.round(22 * k), color: tokens.accent })
+        ? text(spec.site, {
+            fontFamily: MONO,
+            fontSize: Math.round(SCALE.footer * k),
+            color: tokens.accent,
+            ...clamped(1),
+          })
         : null),
-    logoMark(spec, k, Math.min(spec.logoWidth, 120))
+    logoMark(spec, k, Math.min(spec.logoWidth, 140))
   );
 
   const body = box(
-    { flexDirection: 'column', justifyContent: 'center', gap: Math.round(24 * k), flexGrow: 1 },
-    text(spec.title, {
-      fontFamily: DISPLAY,
-      fontSize: titleSize(spec.title, k, 72),
-      lineHeight: 1.1,
-      letterSpacing: Math.round(-1.6 * k),
-    }),
-    spec.subtitle
-      ? text(spec.subtitle, {
-          fontSize: Math.round(28 * k),
-          lineHeight: 1.4,
-          color: tokens.muted,
-          maxWidth: '90%',
-        })
-      : null
+    { flexDirection: 'column', justifyContent: 'center', gap: Math.round(20 * k), flexGrow: 1 },
+    titleText(spec, tokens, k, spec.subtitle ? 2 : 3),
+    subtitleText(spec, tokens, k, { lines: 2, tight: true })
   );
 
   return shell(
@@ -677,7 +702,7 @@ function article(spec, tokens) {
         width: '100%',
         height: '100%',
         padding: pad,
-        paddingTop: Math.round(pad * 1.1),
+        paddingTop: Math.round(pad * 1.15),
       },
       head,
       body,
@@ -685,9 +710,9 @@ function article(spec, tokens) {
         ? box(
             {
               alignItems: 'center',
-              gap: Math.round(12 * k),
-              borderTop: `${Math.max(1, Math.round(2 * k))}px solid ${tokens.rule}`,
-              paddingTop: Math.round(24 * k),
+              gap: Math.round(14 * k),
+              borderTop: `${Math.max(2, Math.round(3 * k))}px solid ${tokens.rule}`,
+              paddingTop: Math.round(20 * k),
             },
             ...byline
           )
@@ -699,6 +724,7 @@ function article(spec, tokens) {
 const REGISTRY = { editorial, stat, minimal, code, split, quote, banner, article };
 
 export function buildTree(spec) {
+  used = [];
   const fn = REGISTRY[spec.template] || editorial;
   return fn(spec, spec.tokens);
 }

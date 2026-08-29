@@ -22,7 +22,7 @@
  */
 
 const VISUAL_KEYS = [
-  'title', 'subtitle', 'description', 'eyebrow', 'badge', 'site', 'author',
+  'title', 'subtitle', 'description', 'badge', 'site', 'author',
   'template', 'theme', 'size', 'w', 'h', 'scale', 'align', 'pattern',
   'bg', 'bgAlt', 'fg', 'muted', 'accent', 'rule', 'logo', 'logoWidth',
   'date', 'meta',

@@ -46,6 +46,24 @@ export async function renderSvg(spec) {
   });
 }
 
+/**
+ * Natural height of a card's content, ignoring the fixed canvas height.
+ *
+ * Used by the tests to prove no template overflows its own card. A clipped
+ * footer is invisible to a size floor check but obvious to a reader, so this
+ * is the gate that catches it.
+ */
+export async function measureHeight(spec) {
+  if (!runtime) throw new Error('render runtime not initialised');
+  const { fonts } = await runtime;
+  const svg = await satori(buildTree({ ...spec, measure: true }), {
+    width: spec.width,
+    fonts,
+  });
+  const m = svg.match(/height="([\d.]+)"/);
+  return m ? parseFloat(m[1]) : null;
+}
+
 export async function renderPng(spec) {
   const svg = await renderSvg(spec);
   const resvg = new Resvg(svg, {

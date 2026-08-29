@@ -60,13 +60,43 @@ const { html } = await res.json();
 // splice html into <head>
 ```
 
+## Sized for a message thread
+
+The design constraint is not the 1200 by 630 canvas, it is what survives being
+shown at roughly 300 points wide in a text message. That is close to a quarter
+size, so a 30 pixel subtitle arrives as 8 point type and nobody reads it.
+
+Consequences, all of them deliberate:
+
+- **No eyebrow.** Small grey uppercase labels vanish at preview scale. The
+  badge replaced it: a solid accent pill, high contrast, readable as a shape
+  even when the letters are not.
+- **Everything larger.** Headlines start at 104 to 132 pixels depending on
+  template, subtitles at 46 to 50, footers at 44. Nothing renders below 42
+  pixels, which is 11 point once scaled down.
+- **Clamp, do not shrink.** Long text used to shrink until it fit, which just
+  moved the failure from clipped to unreadable. Titles and subtitles now clamp
+  to a line count with an ellipsis and hold their size.
+- **Three stats, not four.** A fourth column pushed each value under the floor.
+
+Two gates in `npm test` enforce this rather than leaving it as an intention:
+
+- Every font size on every template, across four content extremes, is checked
+  at its apparent size and must clear 11 point.
+- Every template is rendered a second time with the canvas height unset, and
+  the natural height of the content is compared against the card it has to fit
+  in. This is what catches a clipped footer, which a size floor cannot see.
+
+Both were written after the first version passed the size check and still
+clipped three cards at the bottom edge.
+
 ## Parameters
 
 | Param | Notes |
 | --- | --- |
 | `title` | Headline. Falls back to `site` when absent. |
 | `subtitle` | Also accepted as `description`. Feeds `og:description`. |
-| `eyebrow`, `badge` | Small label above the headline, and a pill beside it. |
+| `badge` | A solid accent pill. The only label element on a card. |
 | `site`, `author` | Footer line. `site` also feeds `og:site_name`. |
 | `stat` | Repeatable, `Value|Label`, up to four. Used by the `stat` template. |
 | `date`, `meta` | Byline detail for `article`, attribution line for `quote`. |
@@ -210,6 +240,7 @@ src/render.js     satori and resvg, with memoised wasm init
 src/templates.js  the four card layouts as plain element trees
 src/theme.js      palettes, sizes, token resolution
 src/params.js     parsing, clamping, canonical cache key
+src/type.js       the type scale, anchored to apparent size in a preview
 src/tags.js       Open Graph and Twitter tag construction
 src/assets.js     remote logo fetching, guards, intrinsic size sniffing
 src/embed.js      the client configuration script, generated per origin

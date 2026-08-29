@@ -10,12 +10,14 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { initRuntime, render } from '../src/render.js';
+import { initRuntime, measureHeight, render } from '../src/render.js';
 import { parseSpec, parseMeta, canonicalQuery } from '../src/params.js';
 import { buildTags, tagsToHtml, tagsToObject } from '../src/tags.js';
 import { imageSize, resolveLogo } from '../src/assets.js';
 import { embedScript } from '../src/embed.js';
 import { PATTERNS, TEMPLATES, THEMES } from '../src/theme.js';
+import { sizesUsed } from '../src/templates.js';
+import { MIN_APPARENT_PT, MIN_SIZE, PREVIEW_WIDTH, apparentPt } from '../src/type.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
@@ -79,19 +81,19 @@ function stubFetch(bytes, { type = 'image/svg+xml', status = 200, length = null 
 const realFetch = globalThis.fetch;
 
 const cases = [
-  ['editorial-indigo', 'template=editorial&theme=indigo&eyebrow=Field%20notes&title=Structured%20data%20is%20the%20substrate%20both%20engines%20feed%20on&subtitle=Why%20the%20same%20markup%20serves%20classic%20search%20and%20generative%20answers&site=jakelabate.com&author=Jake%20Labate'],
+  ['editorial-indigo', 'template=editorial&theme=indigo&badge=Field%20notes&title=Structured%20data%20is%20the%20substrate%20both%20engines%20feed%20on&subtitle=Why%20the%20same%20markup%20serves%20classic%20search%20and%20generative%20answers&site=jakelabate.com&author=Jake%20Labate'],
   ['editorial-cream', 'template=editorial&theme=cream&badge=New&title=SchemaCDN&subtitle=Deploy%20and%20govern%20structured%20data%20across%20every%20template&site=schemacdn.com'],
-  ['stat-ink', 'template=stat&theme=ink&eyebrow=Audit&title=Technical%20SEO%20audit%20results&stat=312%25%7COrganic%20sessions&stat=1.4s%7CLCP&stat=98%7CPages%20fixed&site=jakelabate.com'],
+  ['stat-ink', 'template=stat&theme=ink&badge=Audit&title=Technical%20SEO%20audit%20results&stat=312%25%7COrganic%20sessions&stat=1.4s%7CLCP&stat=98%7CPages%20fixed&site=jakelabate.com'],
   ['minimal-paper', 'template=minimal&theme=paper&title=Open%20Graph%2C%20on%20demand&subtitle=One%20endpoint%20for%20the%20card%20and%20the%20markup&site=og.jakelabate.com'],
   ['code-slate', 'template=code&theme=slate&badge=curl&title=curl%20-s%20https%3A%2F%2Fog.example.com%2Fv1%2Ftags.html%3Ftitle%3DHello&subtitle=%23%20writes%20the%20whole%20head%20block%20for%20you&site=og.example.com'],
   ['long-title-overflow', 'template=editorial&theme=indigo&title=' + encodeURIComponent('A deliberately overlong headline used to prove the size ramp keeps very long strings inside the safe area of the card without clipping or overflow') + '&site=example.com'],
   ['custom-colors', 'template=editorial&theme=indigo&bg=%23120b1f&accent=%23f0abfc&fg=fff&title=Custom%20token%20override&site=example.com'],
   ['square-2x', 'size=square&scale=2&template=minimal&theme=ink&title=Square%20at%202x&site=example.com'],
-  ['split-violet', 'template=split&theme=violet&pattern=glow&eyebrow=Case%20study&title=Rebuilding%20a%20product%20taxonomy%20around%20intent&subtitle=Nine%20months%2C%20four%20thousand%20URLs&site=jakelabate.com&logo=1'],
+  ['split-violet', 'template=split&theme=violet&pattern=glow&badge=Case%20study&title=Rebuilding%20a%20product%20taxonomy%20around%20intent&subtitle=Nine%20months%2C%20four%20thousand%20URLs&site=jakelabate.com&logo=1'],
   ['quote-sunset', 'template=quote&theme=sunset&pattern=dots&title=' + encodeURIComponent('The same markup feeds both engines, so the argument about which one matters is the wrong argument.') + '&author=Jake%20Labate&meta=SEO%20Consultant&logo=1'],
-  ['banner-forest', 'template=banner&theme=forest&pattern=diagonal&eyebrow=Release&title=SchemaCDN%202.0&subtitle=Governed%20structured%20data%2C%20one%20deploy&site=schemacdn.com&logo=1'],
-  ['article-mono', 'template=article&theme=mono&pattern=off&eyebrow=Field%20notes&title=What%20Open%20Graph%20actually%20guarantees&subtitle=And%20the%20four%20places%20every%20implementation%20quietly%20breaks&author=Jake%20Labate&date=Aug%2029%2C%202026&meta=6%20min%20read&logo=1'],
-  ['editorial-logo-glow', 'template=editorial&theme=indigo&pattern=glow&eyebrow=Service&title=Open%20Graph%20as%20an%20edge%20API&subtitle=The%20card%20and%20the%20markup%20from%20one%20origin&site=og.jakelabate.com&author=Jake%20Labate&logo=1'],
+  ['banner-forest', 'template=banner&theme=forest&pattern=diagonal&badge=Release&title=SchemaCDN%202.0&subtitle=Governed%20structured%20data%2C%20one%20deploy&site=schemacdn.com&logo=1'],
+  ['article-mono', 'template=article&theme=mono&pattern=off&badge=Field%20notes&title=What%20Open%20Graph%20actually%20guarantees&subtitle=And%20the%20four%20places%20every%20implementation%20quietly%20breaks&author=Jake%20Labate&date=Aug%2029%2C%202026&meta=6%20min%20read&logo=1'],
+  ['editorial-logo-glow', 'template=editorial&theme=indigo&pattern=glow&badge=Service&title=Open%20Graph%20as%20an%20edge%20API&subtitle=The%20card%20and%20the%20markup%20from%20one%20origin&site=og.jakelabate.com&author=Jake%20Labate&logo=1'],
 ];
 
 console.log('render cases');
@@ -296,12 +298,101 @@ console.log('\nembed script');
   check('embed script is syntactically valid', parsed);
 }
 
+
+console.log('\nlegibility floor (message preview)');
+{
+  // The whole point of this suite. A link preview in a message thread renders
+  // around PREVIEW_WIDTH points wide, so every size on the card is checked at
+  // that apparent size rather than at full resolution.
+  const probes = [
+    ['short title', 'title=Ship%20it'],
+    ['long title', 'title=' + encodeURIComponent('A deliberately overlong headline that would once have been shrunk into illegibility rather than clamped')],
+    ['full card', 'title=Open%20Graph%20as%20an%20edge%20API&subtitle=The%20card%20and%20the%20markup%20from%20one%20origin&site=og.jakelabate.com&author=Jake%20Labate&badge=New'],
+    ['stats', 'template=stat&title=Audit%20results&stat=312%25%7COrganic%20sessions&stat=1.4s%7CLCP&stat=98%7CPages%20fixed&site=example.com'],
+    ['article', 'template=article&title=What%20Open%20Graph%20guarantees&subtitle=And%20where%20it%20breaks&author=Jake%20Labate&date=Aug%2029%2C%202026&meta=6%20min%20read&site=example.com'],
+  ];
+
+  let worst = { pt: Infinity, where: '' };
+  let violations = [];
+
+  for (const template of TEMPLATES) {
+    for (const [label, qs] of probes) {
+      const spec = parseSpec(new URLSearchParams(qs + '&template=' + template));
+      await render(spec);
+      for (const size of sizesUsed()) {
+        const pt = apparentPt(size, spec.width);
+        if (pt < worst.pt) worst = { pt, where: `${template}/${label} @ ${size}px` };
+        if (pt < MIN_APPARENT_PT) {
+          violations.push(`${template}/${label}: ${size}px reads as ${pt.toFixed(1)}pt`);
+        }
+      }
+    }
+  }
+
+  check(
+    `nothing below ${MIN_APPARENT_PT}pt at ${PREVIEW_WIDTH}pt wide`,
+    violations.length === 0,
+    violations.slice(0, 4).join(' | ')
+  );
+  check(
+    'smallest type on any card',
+    worst.pt >= MIN_APPARENT_PT,
+    `${worst.pt.toFixed(1)}pt  (${worst.where})`
+  );
+  check('floor constant matches the ratio', MIN_SIZE === Math.ceil(MIN_APPARENT_PT / (PREVIEW_WIDTH / 1200)), String(MIN_SIZE));
+
+  // A long title must clamp, not shrink past the floor.
+  const longSpec = parseSpec(new URLSearchParams('title=' + encodeURIComponent('x'.repeat(400))));
+  await render(longSpec);
+  const titlePx = Math.max(...sizesUsed());
+  check('long titles clamp instead of shrinking below the floor', titlePx >= 78, `${titlePx}px`);
+
+  check('eyebrow is gone from the spec', !('eyebrow' in parseSpec(new URLSearchParams('eyebrow=nope'))));
+}
+
+
+console.log('\noverflow (content must fit the canvas)');
+{
+  // A size floor cannot see a clipped footer. This can: render each template
+  // with the canvas height unset and compare the natural height of the
+  // content against the card it has to fit inside.
+  const probes = [
+    ['bare', 'title=Ship%20it'],
+    ['full', 'title=Open%20Graph%20as%20an%20edge%20API%20for%20every%20project&subtitle=The%20card%20and%20the%20markup%20from%20one%20origin%2C%20cached%20at%20the%20edge&site=og.jakelabate.com&author=Jake%20Labate&badge=New&stat=312%25%7COrganic&stat=1.4s%7CLCP&stat=98%7CFixed&date=Aug%2029&meta=6%20min%20read'],
+    ['long', 'title=' + encodeURIComponent('word '.repeat(40)) + '&subtitle=' + encodeURIComponent('filler '.repeat(40)) + '&site=example.com&author=Someone&badge=Long&stat=1%7CA&stat=2%7CB&stat=3%7CC&date=Aug&meta=9%20min'],
+    ['unbroken', 'title=' + encodeURIComponent('Supercalifragilisticexpialidocious'.repeat(4)) + '&subtitle=short&site=example.com'],
+  ];
+
+  const over = [];
+  let tallest = 0;
+  for (const template of TEMPLATES) {
+    for (const [label, qs] of probes) {
+      const spec = parseSpec(new URLSearchParams(qs + '&template=' + template));
+      const natural = await measureHeight(spec);
+      tallest = Math.max(tallest, natural);
+      if (natural > spec.height) {
+        over.push(`${template}/${label} needs ${Math.round(natural)} of ${spec.height}`);
+      }
+    }
+  }
+  check('no template overflows its card', over.length === 0, over.slice(0, 4).join(' | '));
+  check('tallest render fits', tallest <= 630, `${Math.round(tallest)}/630`);
+
+  // The mechanism the whole thing depends on. Satori ignores lineClamp on a
+  // flex container, so this guards against a regression to display: flex.
+  const clampedSpec = parseSpec(new URLSearchParams('title=' + encodeURIComponent('word '.repeat(60))));
+  const unclamped = parseSpec(new URLSearchParams('title=' + encodeURIComponent('word '.repeat(6))));
+  const tall = await measureHeight(clampedSpec);
+  const short = await measureHeight(unclamped);
+  check('lineClamp is actually taking effect', tall - short < 200, `${Math.round(tall)} vs ${Math.round(short)}`);
+}
+
 console.log('\nno em dashes in source');
 {
   const files = [
     'src/index.js', 'src/render.js', 'src/params.js', 'src/tags.js',
     'src/templates.js', 'src/theme.js', 'src/sign.js', 'src/docs.js',
-    'src/assets.js', 'src/embed.js', 'examples/inject-tags.mjs',
+    'src/assets.js', 'src/embed.js', 'src/type.js', 'examples/inject-tags.mjs',
     'examples/edge-inject.js', 'test/render.test.js', 'README.md',
   ];
   let found = [];
