@@ -22,8 +22,10 @@ import { initRuntime, render } from './render.js';
 import { canonicalQuery, parseMeta, parseSpec } from './params.js';
 import { buildTags, tagsToHtml, tagsToObject } from './tags.js';
 import { signQuery, verifyQuery } from './sign.js';
-import { SIZES, TEMPLATES, THEMES } from './theme.js';
+import { PATTERNS, SIZES, TEMPLATES, THEMES } from './theme.js';
+import { resolveLogo } from './assets.js';
 import { docsPage } from './docs.js';
+import { embedScript } from './embed.js';
 
 const FONTS = [
   { name: 'Space Grotesk', data: spaceGroteskBold, weight: 700, style: 'normal' },
@@ -69,8 +71,9 @@ function serviceOrigin(request, env) {
  */
 const IMAGE_PARAMS = new Set([
   'title', 'subtitle', 'description', 'eyebrow', 'badge', 'site', 'author',
-  'stat', 'theme', 'template', 'size', 'w', 'h', 'scale', 'align', 'pattern',
-  'bg', 'bgAlt', 'fg', 'muted', 'accent', 'rule',
+  'stat', 'date', 'meta', 'theme', 'template', 'size', 'w', 'h', 'scale',
+  'align', 'pattern', 'bg', 'bgAlt', 'fg', 'muted', 'accent', 'rule',
+  'logo', 'logoWidth',
 ]);
 
 function imageParams(searchParams) {
@@ -115,7 +118,13 @@ async function handleImage(request, env, ctx, url, ext) {
   const spec = parseSpec(new URLSearchParams(canonical));
   spec.format = ext === 'svg' ? 'svg' : 'png';
 
-  await initRuntime({ yogaWasm, resvgWasm, fonts: FONTS });
+  // A logo that cannot be fetched leaves spec.logo null and the card renders
+  // without it. A broken mark must never cost the whole preview.
+  const [logo] = await Promise.all([
+    resolveLogo(spec.logoUrl, spec.logoWidth, env),
+    initRuntime({ yogaWasm, resvgWasm, fonts: FONTS }),
+  ]);
+  spec.logo = logo;
 
   let out;
   try {
@@ -131,6 +140,7 @@ async function handleImage(request, env, ctx, url, ext) {
       'x-og-cache': 'MISS',
       'x-og-template': spec.template,
       'x-og-theme': spec.themeName,
+      'x-og-logo': spec.logoUrl ? (spec.logo ? 'loaded' : 'failed') : 'none',
       ...CORS,
     },
   });
@@ -222,10 +232,23 @@ export default {
         case '/v1/meta':
           return handleTags(request, env, url, 'meta');
 
+        case '/v1/embed.js':
+          return new Response(
+            embedScript(serviceOrigin(request, env), { signed: Boolean(env.SIGNING_KEY) }),
+            {
+              headers: {
+                'content-type': 'text/javascript; charset=utf-8',
+                'cache-control': 'public, max-age=3600',
+                ...CORS,
+              },
+            }
+          );
+
         case '/v1/themes':
           return json({
             themes: Object.keys(THEMES),
             templates: TEMPLATES,
+            patterns: PATTERNS,
             sizes: SIZES,
             tokens: THEMES,
           });

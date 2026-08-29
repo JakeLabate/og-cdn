@@ -22,7 +22,8 @@ renders are served from the Cloudflare edge cache and never re-execute.
 | `GET /v1/tags` | JSON: tag map, ready to paste HTML block, absolute image URL. |
 | `GET /v1/tags.html` | Just the meta tag block, plain text. |
 | `GET /v1/meta` | Tags plus the resolved card spec, for build pipelines. |
-| `GET /v1/themes` | Available themes, templates, sizes, colour tokens. |
+| `GET /v1/embed.js` | The client configuration script. Reads `data-*` attributes off its own tag. |
+| `GET /v1/themes` | Available themes, templates, patterns, sizes, colour tokens. |
 | `GET /health` | Liveness. |
 | `GET /` | Docs and a live playground, served by the worker itself. |
 
@@ -68,17 +69,86 @@ const { html } = await res.json();
 | `eyebrow`, `badge` | Small label above the headline, and a pill beside it. |
 | `site`, `author` | Footer line. `site` also feeds `og:site_name`. |
 | `stat` | Repeatable, `Value|Label`, up to four. Used by the `stat` template. |
-| `template` | `editorial`, `stat`, `minimal`, `code`. |
-| `theme` | `indigo`, `ink`, `cream`, `paper`, `slate`. |
+| `date`, `meta` | Byline detail for `article`, attribution line for `quote`. |
+| `logo` | https URL to a PNG, JPEG, GIF or SVG. Fetched, sized from its own header, inlined as a data URI. |
+| `logoWidth` | Display width in card pixels, 24 to 400. Height follows the intrinsic ratio. |
+| `template` | `editorial`, `article`, `split`, `banner`, `quote`, `stat`, `minimal`, `code`. |
+| `theme` | `indigo`, `ink`, `violet`, `sunset`, `forest`, `mono`, `cream`, `paper`, `slate`. |
+| `pattern` | `grid`, `dots`, `diagonal`, `glow`, `off`. |
 | `bg`, `bgAlt`, `fg`, `muted`, `accent`, `rule` | Hex overrides on top of the theme. |
 | `size` | `og`, `square`, `wide`, `linkedin`, `story`. Or pass `w` and `h`. |
 | `scale` | `1` or `2`. Renders at 2x, tags report the scaled dimensions. |
-| `align`, `pattern` | `left` or `center`, and `grid` or `off`. |
+| `align` | `left` or `center`. |
 | `url`, `type`, `locale`, `card`, `twitter`, `alt` | Markup only. Never fragment the image cache. |
 
 Every value is clamped and stripped. Unknown themes and templates fall back
 rather than error, bad hex is ignored, control characters are collapsed, and
 attribute values are escaped on the way into HTML.
+
+## Configure from a script tag
+
+Drop one tag, set the brand once, and every page under it gets a card:
+
+```html
+<script src="https://og.example.com/v1/embed.js"
+        data-theme="indigo"
+        data-template="article"
+        data-accent="#2dd4bf"
+        data-logo="https://example.com/logo.svg"
+        data-site="example.com"></script>
+```
+
+Every query parameter is available as a `data-` attribute, hyphenated:
+`data-logo-width`, `data-bg-alt`. Repeatable stats go in one attribute,
+comma separated: `data-stats="312%|Sessions,1.4s|LCP"`. Anything you leave
+out is derived from the page, so a single site wide tag still produces a
+correct per page card:
+
+| Missing | Read from |
+| --- | --- |
+| `title` | existing `og:title`, then `h1`, then `<title>` |
+| `description` | existing `og:description`, then `meta[name=description]` |
+| `url` | `link[rel=canonical]`, then `location.href` |
+| `site` | existing `og:site_name`, then `location.hostname` |
+
+Set `data-auto="off"` to disable derivation. After a client side route change,
+call `window.ogcdn.refresh({ title: 'New title' })`.
+
+### The caveat that matters
+
+Social crawlers do not execute JavaScript. Facebook, LinkedIn, X, Slack and
+iMessage parse the raw HTML response, so tags injected by `embed.js` are
+invisible to all of them. The script is for previewing a configuration, for
+client rendered apps that need the head kept in sync, and for consumers that
+do render.
+
+For crawlers, feed the same attribute vocabulary to something that runs before
+the response leaves the server:
+
+- **Build step**: `examples/inject-tags.mjs` walks a `dist` folder, asks the
+  service for each page's tag block, and splices it into the head.
+- **Edge rewriter**: `examples/edge-inject.js` is a second worker that sits in
+  front of an origin, reads the `data-*` attributes off the script tag already
+  in the page, injects real tags, and removes the now redundant script. The
+  page keeps its one line of configuration and crawlers get server rendered
+  markup.
+
+## Logos
+
+Pass `logo` as an https URL. The service fetches it once per isolate, reads
+the intrinsic dimensions out of the file header so the aspect ratio is exact
+rather than guessed, and inlines it as a data URI.
+
+The fetch is guarded, because this is the only place the service reaches a URL
+a stranger supplied: https only, 512 KB cap, 3 second timeout, image content
+types only, and private or link local hosts blocked outright. To restrict it
+further, set `LOGO_ALLOWED_HOSTS` to a comma separated list of hostnames, and
+subdomains of those hosts are accepted too.
+
+A logo that fails any of those checks is dropped and the card renders without
+it. A broken mark should never cost you the whole preview. The `x-og-logo`
+response header reports `loaded`, `failed` or `none` so you can tell which
+happened.
 
 ## Caching
 
@@ -141,9 +211,13 @@ src/templates.js  the four card layouts as plain element trees
 src/theme.js      palettes, sizes, token resolution
 src/params.js     parsing, clamping, canonical cache key
 src/tags.js       Open Graph and Twitter tag construction
+src/assets.js     remote logo fetching, guards, intrinsic size sniffing
+src/embed.js      the client configuration script, generated per origin
 src/sign.js       optional HMAC request signing
 src/docs.js       the self-hosted docs page
-test/render.test.js  runs the real pipeline in Node
+examples/inject-tags.mjs  build time injection into a dist folder
+examples/edge-inject.js   edge rewriter, server side tags from the script tag
+test/render.test.js       runs the real pipeline in Node
 ```
 
 Templates are pure functions of `(spec, tokens)` returning a Satori node, so a

@@ -46,6 +46,38 @@ export const THEMES = {
     accent: '#38bdf8',
     rule: '#334155',
   },
+  violet: {
+    bg: '#160f26',
+    bgAlt: '#211735',
+    fg: '#f4f0ff',
+    muted: '#a99bc8',
+    accent: '#c084fc',
+    rule: '#33254d',
+  },
+  sunset: {
+    bg: '#1a1113',
+    bgAlt: '#26181b',
+    fg: '#fdf3ee',
+    muted: '#c2a196',
+    accent: '#fb7185',
+    rule: '#3b2429',
+  },
+  forest: {
+    bg: '#0e1a15',
+    bgAlt: '#152720',
+    fg: '#eef7f2',
+    muted: '#8fae9f',
+    accent: '#34d399',
+    rule: '#1f382e',
+  },
+  mono: {
+    bg: '#0a0a0a',
+    bgAlt: '#141414',
+    fg: '#fafafa',
+    muted: '#8a8a8a',
+    accent: '#fafafa',
+    rule: '#262626',
+  },
 };
 
 export const DEFAULT_THEME = 'indigo';
@@ -61,8 +93,20 @@ export const SIZES = {
 
 export const DEFAULT_SIZE = 'og';
 
-export const TEMPLATES = ['editorial', 'stat', 'minimal', 'code'];
+export const TEMPLATES = [
+  'editorial',
+  'stat',
+  'minimal',
+  'code',
+  'split',
+  'quote',
+  'banner',
+  'article',
+];
 export const DEFAULT_TEMPLATE = 'editorial';
+
+export const PATTERNS = ['grid', 'dots', 'diagonal', 'glow', 'off'];
+export const DEFAULT_PATTERN = 'grid';
 
 const HEX = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i;
 

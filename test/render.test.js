@@ -13,6 +13,9 @@ import { dirname, join } from 'node:path';
 import { initRuntime, render } from '../src/render.js';
 import { parseSpec, parseMeta, canonicalQuery } from '../src/params.js';
 import { buildTags, tagsToHtml, tagsToObject } from '../src/tags.js';
+import { imageSize, resolveLogo } from '../src/assets.js';
+import { embedScript } from '../src/embed.js';
+import { PATTERNS, TEMPLATES, THEMES } from '../src/theme.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
@@ -35,7 +38,7 @@ function pngSize(buf) {
   return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
 }
 
-initRuntime({
+await initRuntime({
   yogaWasm: read('src/vendor/yoga.wasm'),
   resvgWasm: read('src/vendor/resvg.wasm'),
   fonts: [
@@ -44,6 +47,36 @@ initRuntime({
     { name: 'IBM Plex Mono', data: read('fonts/IBMPlexMono-Medium.ttf'), weight: 500, style: 'normal' },
   ],
 });
+
+// Fixture logos. Built here rather than committed so the test suite has no
+// binary fixtures to keep in sync, and so the PNG path exercises real bytes.
+const { Resvg } = await import('@resvg/resvg-wasm');
+// Pure vector, no text. resvg loads no system fonts, so a fixture with a
+// text node would render blank and make every logo look mis-sized.
+const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 72" width="240" height="72">
+<rect x="0" y="0" width="72" height="72" rx="16" fill="#2dd4bf"/>
+<path d="M22 50 L36 22 L50 50 Z" fill="#0f1320"/>
+<rect x="90" y="18" width="150" height="12" rx="6" fill="#f2f4f8"/>
+<rect x="90" y="38" width="110" height="12" rx="6" fill="#f2f4f8" opacity="0.65"/>
+<rect x="90" y="58" width="64" height="8" rx="4" fill="#2dd4bf"/>
+</svg>`;
+const LOGO_SVG_BYTES = new TextEncoder().encode(LOGO_SVG);
+const LOGO_PNG_BYTES = new Uint8Array(
+  new Resvg(LOGO_SVG, { fitTo: { mode: 'width', value: 240 } }).render().asPng()
+);
+
+/** Stub fetch so logo resolution is exercised without leaving the process. */
+function stubFetch(bytes, { type = 'image/svg+xml', status = 200, length = null } = {}) {
+  globalThis.fetch = async () =>
+    new Response(status === 200 ? bytes : null, {
+      status,
+      headers: {
+        'content-type': type,
+        ...(length == null ? {} : { 'content-length': String(length) }),
+      },
+    });
+}
+const realFetch = globalThis.fetch;
 
 const cases = [
   ['editorial-indigo', 'template=editorial&theme=indigo&eyebrow=Field%20notes&title=Structured%20data%20is%20the%20substrate%20both%20engines%20feed%20on&subtitle=Why%20the%20same%20markup%20serves%20classic%20search%20and%20generative%20answers&site=jakelabate.com&author=Jake%20Labate'],
@@ -54,11 +87,24 @@ const cases = [
   ['long-title-overflow', 'template=editorial&theme=indigo&title=' + encodeURIComponent('A deliberately overlong headline used to prove the size ramp keeps very long strings inside the safe area of the card without clipping or overflow') + '&site=example.com'],
   ['custom-colors', 'template=editorial&theme=indigo&bg=%23120b1f&accent=%23f0abfc&fg=fff&title=Custom%20token%20override&site=example.com'],
   ['square-2x', 'size=square&scale=2&template=minimal&theme=ink&title=Square%20at%202x&site=example.com'],
+  ['split-violet', 'template=split&theme=violet&pattern=glow&eyebrow=Case%20study&title=Rebuilding%20a%20product%20taxonomy%20around%20intent&subtitle=Nine%20months%2C%20four%20thousand%20URLs&site=jakelabate.com&logo=1'],
+  ['quote-sunset', 'template=quote&theme=sunset&pattern=dots&title=' + encodeURIComponent('The same markup feeds both engines, so the argument about which one matters is the wrong argument.') + '&author=Jake%20Labate&meta=SEO%20Consultant&logo=1'],
+  ['banner-forest', 'template=banner&theme=forest&pattern=diagonal&eyebrow=Release&title=SchemaCDN%202.0&subtitle=Governed%20structured%20data%2C%20one%20deploy&site=schemacdn.com&logo=1'],
+  ['article-mono', 'template=article&theme=mono&pattern=off&eyebrow=Field%20notes&title=What%20Open%20Graph%20actually%20guarantees&subtitle=And%20the%20four%20places%20every%20implementation%20quietly%20breaks&author=Jake%20Labate&date=Aug%2029%2C%202026&meta=6%20min%20read&logo=1'],
+  ['editorial-logo-glow', 'template=editorial&theme=indigo&pattern=glow&eyebrow=Service&title=Open%20Graph%20as%20an%20edge%20API&subtitle=The%20card%20and%20the%20markup%20from%20one%20origin&site=og.jakelabate.com&author=Jake%20Labate&logo=1'],
 ];
 
 console.log('render cases');
 for (const [name, qs] of cases) {
   const spec = parseSpec(new URLSearchParams(qs));
+  if (new URLSearchParams(qs).get('logo') === '1') {
+    stubFetch(name.includes('article') ? LOGO_PNG_BYTES : LOGO_SVG_BYTES, {
+      type: name.includes('article') ? 'image/png' : 'image/svg+xml',
+    });
+    spec.logo = await resolveLogo('https://cdn.example.com/logo', spec.logoWidth, {});
+    globalThis.fetch = realFetch;
+    if (!spec.logo) throw new Error('logo fixture failed to resolve for ' + name);
+  }
   const t0 = Date.now();
   const res = await render(spec);
   const ms = Date.now() - t0;
@@ -140,12 +186,123 @@ console.log('\ntag output');
   check('non http url rejected', bad.url === '');
 }
 
+
+console.log('\nimage size sniffing');
+{
+  const svg = imageSize(LOGO_SVG_BYTES, 'image/svg+xml');
+  check('svg viewBox read', svg && svg.w === 240 && svg.h === 72, JSON.stringify(svg));
+
+  const png = imageSize(LOGO_PNG_BYTES, 'image/png');
+  check('png header read', png && png.w === 240 && png.h === 72, JSON.stringify(png));
+
+  const noViewBox = new TextEncoder().encode('<svg width="50" height="25" xmlns="http://www.w3.org/2000/svg"></svg>');
+  const attrs = imageSize(noViewBox, 'image/svg+xml');
+  check('svg falls back to width and height attributes', attrs && attrs.w === 50 && attrs.h === 25);
+
+  check('garbage returns null', imageSize(new Uint8Array([1, 2, 3, 4]), 'image/png') === null);
+}
+
+console.log('\nlogo resolution guards');
+{
+  stubFetch(LOGO_SVG_BYTES);
+  const ok = await resolveLogo('https://cdn.example.com/logo.svg', 96, {});
+  check('https logo resolves', Boolean(ok) && ok.src.startsWith('data:image/svg+xml;base64,'));
+  check('display width honoured', ok.width === 96, String(ok && ok.width));
+  check('aspect ratio preserved', ok.height === Math.round(96 * (72 / 240)), String(ok && ok.height));
+
+  check('http rejected', (await resolveLogo('http://cdn.example.com/logo.svg', 96, {})) === null);
+  check('localhost rejected', (await resolveLogo('https://localhost/logo.svg', 96, {})) === null);
+  check('private range rejected', (await resolveLogo('https://192.168.1.9/logo.svg', 96, {})) === null);
+  check('link local rejected', (await resolveLogo('https://169.254.169.254/logo.svg', 96, {})) === null);
+  check('garbage url rejected', (await resolveLogo('not a url', 96, {})) === null);
+
+  check(
+    'host allowlist blocks other hosts',
+    (await resolveLogo('https://evil.example/logo.svg', 96, { LOGO_ALLOWED_HOSTS: 'cdn.trusted.com' })) === null
+  );
+  stubFetch(LOGO_SVG_BYTES);
+  check(
+    'host allowlist permits subdomains of a listed host',
+    Boolean(await resolveLogo('https://assets.cdn.trusted.com/l.svg', 96, { LOGO_ALLOWED_HOSTS: 'cdn.trusted.com' }))
+  );
+
+  stubFetch(LOGO_SVG_BYTES, { type: 'text/html' });
+  check('wrong content type rejected', (await resolveLogo('https://cdn.example.com/a.html', 96, {})) === null);
+
+  stubFetch(LOGO_SVG_BYTES, { type: 'image/svg+xml', length: 99_999_999 });
+  check('oversize content-length rejected', (await resolveLogo('https://cdn.example.com/big.svg', 96, {})) === null);
+
+  stubFetch(LOGO_SVG_BYTES, { status: 404 });
+  check('non ok response rejected', (await resolveLogo('https://cdn.example.com/404.svg', 96, {})) === null);
+
+  globalThis.fetch = async () => {
+    throw new Error('network down');
+  };
+  check('fetch failure degrades to null', (await resolveLogo('https://cdn.example.com/x.svg', 96, {})) === null);
+
+  globalThis.fetch = realFetch;
+  check('empty url short circuits', (await resolveLogo('', 96, {})) === null);
+}
+
+console.log('\ntemplate and theme coverage');
+{
+  let rendered = 0;
+  for (const template of TEMPLATES) {
+    const spec = parseSpec(new URLSearchParams(`template=${template}&title=Coverage%20probe&subtitle=Second%20line&site=example.com&author=Someone&stat=1%7COne`));
+    const res = await render(spec);
+    if (pngSize(Buffer.from(res.body))) rendered++;
+  }
+  check('every registered template renders', rendered === TEMPLATES.length, `${rendered}/${TEMPLATES.length}`);
+
+  let themed = 0;
+  for (const theme of Object.keys(THEMES)) {
+    const spec = parseSpec(new URLSearchParams(`theme=${theme}&title=Theme%20probe`));
+    const res = await render(spec);
+    if (pngSize(Buffer.from(res.body))) themed++;
+  }
+  check('every registered theme renders', themed === Object.keys(THEMES).length, `${themed}/${Object.keys(THEMES).length}`);
+
+  let patterned = 0;
+  for (const pattern of PATTERNS) {
+    const spec = parseSpec(new URLSearchParams(`pattern=${pattern}&title=Pattern%20probe`));
+    if (spec.pattern !== pattern) continue;
+    const res = await render(spec);
+    if (pngSize(Buffer.from(res.body))) patterned++;
+  }
+  check('every registered pattern renders', patterned === PATTERNS.length, `${patterned}/${PATTERNS.length}`);
+}
+
+console.log('\nembed script');
+{
+  const src = embedScript('https://og.example.com', { signed: false });
+  writeFileSync(join(out, 'embed.js'), src, 'utf8');
+  check('origin baked in', src.includes('"https://og.example.com"'));
+  check('unsigned build skips the network path', src.includes('var SIGNED = false;'));
+  check('exposes a refresh handle', src.includes('window.ogcdn = api;'));
+  check('reads dataset', src.includes('el.dataset'));
+  check('logo is a configurable key', src.includes('"logo"') && src.includes('"logoWidth"'));
+
+  const signedSrc = embedScript('https://og.example.com', { signed: true });
+  check('signed build asks the worker for tags', signedSrc.includes('var SIGNED = true;'));
+
+  // Parse it the way a browser would, to catch a template literal typo.
+  const { execFileSync } = await import('node:child_process');
+  let parsed = true;
+  try {
+    execFileSync(process.execPath, ['--check', join(out, 'embed.js')]);
+  } catch {
+    parsed = false;
+  }
+  check('embed script is syntactically valid', parsed);
+}
+
 console.log('\nno em dashes in source');
 {
   const files = [
     'src/index.js', 'src/render.js', 'src/params.js', 'src/tags.js',
     'src/templates.js', 'src/theme.js', 'src/sign.js', 'src/docs.js',
-    'test/render.test.js', 'README.md',
+    'src/assets.js', 'src/embed.js', 'examples/inject-tags.mjs',
+    'examples/edge-inject.js', 'test/render.test.js', 'README.md',
   ];
   let found = [];
   for (const f of files) {

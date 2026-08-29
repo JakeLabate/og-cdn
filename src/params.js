@@ -7,9 +7,11 @@
  */
 
 import {
+  DEFAULT_PATTERN,
   DEFAULT_SIZE,
   DEFAULT_TEMPLATE,
   DEFAULT_THEME,
+  PATTERNS,
   SIZES,
   TEMPLATES,
   THEMES,
@@ -26,6 +28,9 @@ const LIMITS = {
   statLabel: 40,
   statValue: 24,
   alt: 300,
+  date: 40,
+  meta: 60,
+  logo: 600,
 };
 
 function clean(value, max) {
@@ -107,9 +112,17 @@ export function parseSpec(searchParams) {
     site: clean(sp.get('site'), LIMITS.site),
     author: clean(sp.get('author'), LIMITS.author),
     stats: parseStats(sp),
+    date: clean(sp.get('date'), LIMITS.date),
+    meta: clean(sp.get('meta'), LIMITS.meta),
     align: sp.get('align') === 'center' ? 'center' : 'left',
-    pattern: sp.get('pattern') === 'off' ? 'off' : 'grid',
+    pattern: PATTERNS.includes(sp.get('pattern')) ? sp.get('pattern') : DEFAULT_PATTERN,
     format: sp.get('format') === 'svg' ? 'svg' : 'png',
+
+    // Populated later by the asset resolver. Templates read `logo`, which is
+    // either null or { src, width, height }, and never touch the raw URL.
+    logoUrl: parseUrl(clean(sp.get('logo'), LIMITS.logo)),
+    logoWidth: clampInt(sp.get('logoWidth'), 24, 400, 88),
+    logo: null,
   };
 
   if (!spec.title) spec.title = spec.site || 'Untitled';

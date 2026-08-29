@@ -2,7 +2,8 @@
  * Card layouts as plain Satori element trees.
  *
  * No JSX, no build step. Each template is a pure function of (spec, tokens)
- * that returns a Satori node, so templates stay testable in isolation.
+ * that returns a Satori node, so templates stay testable in isolation and a
+ * new layout is one function plus one registry entry.
  */
 
 const DISPLAY = 'Space Grotesk';
@@ -14,7 +15,8 @@ const h = (type, props = {}, ...children) => ({
   props: { ...props, children: children.length === 1 ? children[0] : children },
 });
 
-const box = (style, ...children) => h('div', { style: { display: 'flex', ...style } }, ...children);
+const box = (style, ...children) =>
+  h('div', { style: { display: 'flex', ...style } }, ...children.filter(Boolean));
 
 const text = (value, style) => h('div', { style: { display: 'flex', ...style } }, value);
 
@@ -33,23 +35,63 @@ function titleSize(title, k, base = 78) {
   return Math.round(size * k);
 }
 
-/** Faint grid, drawn as a background image so it costs no layout nodes. */
-function gridLayer(tokens, on) {
-  if (!on) return null;
-  const line = tokens.rule;
-  return h('div', {
-    style: {
-      display: 'flex',
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      opacity: 0.5,
-      backgroundImage: `linear-gradient(to right, ${line} 1px, transparent 1px), linear-gradient(to bottom, ${line} 1px, transparent 1px)`,
-      backgroundSize: '60px 60px',
-    },
+/** The resolved logo, or nothing. A logo that failed to load is simply absent. */
+function logoMark(spec, k, widthOverride) {
+  if (!spec.logo) return null;
+  const w = Math.round((widthOverride || spec.logo.width) * k);
+  const ratio = spec.logo.height / spec.logo.width;
+  return h('img', {
+    src: spec.logo.src,
+    width: w,
+    height: Math.max(1, Math.round(w * ratio)),
+    style: { display: 'flex', objectFit: 'contain' },
   });
+}
+
+/**
+ * Background texture, drawn as a background image so it costs no layout nodes
+ * and never affects the flow of anything above it.
+ */
+function patternLayer(spec, tokens) {
+  const fill = { display: 'flex', position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
+
+  switch (spec.pattern) {
+    case 'grid':
+      return h('div', {
+        style: {
+          ...fill,
+          opacity: 0.5,
+          backgroundImage: `linear-gradient(to right, ${tokens.rule} 1px, transparent 1px), linear-gradient(to bottom, ${tokens.rule} 1px, transparent 1px)`,
+          backgroundSize: '60px 60px',
+        },
+      });
+    case 'dots':
+      return h('div', {
+        style: {
+          ...fill,
+          opacity: 0.7,
+          backgroundImage: `radial-gradient(${tokens.rule} 1.6px, transparent 1.6px)`,
+          backgroundSize: '32px 32px',
+        },
+      });
+    case 'diagonal':
+      return h('div', {
+        style: {
+          ...fill,
+          opacity: 0.45,
+          backgroundImage: `repeating-linear-gradient(45deg, ${tokens.rule} 0px, ${tokens.rule} 1px, transparent 1px, transparent 14px)`,
+        },
+      });
+    case 'glow':
+      return h('div', {
+        style: {
+          ...fill,
+          backgroundImage: `radial-gradient(circle at 12% 0%, ${tokens.accent}40 0%, transparent 55%), radial-gradient(circle at 100% 100%, ${tokens.bgAlt} 0%, transparent 60%)`,
+        },
+      });
+    default:
+      return null;
+  }
 }
 
 function accentBar(tokens, k) {
@@ -66,11 +108,12 @@ function accentBar(tokens, k) {
   });
 }
 
-function shell(spec, tokens, inner) {
+function shell(spec, tokens, inner, { bar = true } = {}) {
   const k = spec.width / 1200;
-  const kids = [accentBar(tokens, k)];
-  const grid = gridLayer(tokens, spec.pattern === 'grid');
-  if (grid) kids.push(grid);
+  const kids = [];
+  const pattern = patternLayer(spec, tokens);
+  if (pattern) kids.push(pattern);
+  if (bar) kids.push(accentBar(tokens, k));
   kids.push(inner);
 
   return h(
@@ -119,37 +162,31 @@ function eyebrowRow(spec, tokens, k) {
   return box({ alignItems: 'center', gap: Math.round(18 * k) }, ...kids);
 }
 
-function footerRow(spec, tokens, k) {
-  if (!spec.site && !spec.author) return null;
-  const kids = [];
+/** Footer line, with the logo taking the right edge when one is present. */
+function footerRow(spec, tokens, k, { withLogo = true } = {}) {
+  const left = [];
   if (spec.site) {
-    kids.push(
-      text(spec.site, {
-        fontFamily: MONO,
-        fontSize: Math.round(24 * k),
-        color: tokens.fg,
-      })
-    );
+    left.push(text(spec.site, { fontFamily: MONO, fontSize: Math.round(24 * k), color: tokens.fg }));
   }
   if (spec.site && spec.author) {
-    kids.push(text('/', { fontSize: Math.round(24 * k), color: tokens.muted }));
+    left.push(text('/', { fontSize: Math.round(24 * k), color: tokens.muted }));
   }
   if (spec.author) {
-    kids.push(
-      text(spec.author, {
-        fontSize: Math.round(24 * k),
-        color: tokens.muted,
-      })
-    );
+    left.push(text(spec.author, { fontSize: Math.round(24 * k), color: tokens.muted }));
   }
+
+  const mark = withLogo ? logoMark(spec, k, Math.min(spec.logoWidth, 140)) : null;
+  if (!left.length && !mark) return null;
+
   return box(
     {
       alignItems: 'center',
-      gap: Math.round(14 * k),
+      justifyContent: 'space-between',
       borderTop: `${Math.max(1, Math.round(2 * k))}px solid ${tokens.rule}`,
       paddingTop: Math.round(26 * k),
     },
-    ...kids
+    box({ alignItems: 'center', gap: Math.round(14 * k) }, ...left),
+    mark
   );
 }
 
@@ -158,8 +195,23 @@ function editorial(spec, tokens) {
   const pad = Math.round(72 * k);
   const head = [];
 
+  // With a logo the mark leads and the eyebrow sits beside it, so the two
+  // never stack into two near identical label rows.
   const eyebrow = eyebrowRow(spec, tokens, k);
-  if (eyebrow) head.push(eyebrow);
+  const mark = logoMark(spec, k);
+  if (mark || eyebrow) {
+    head.push(
+      box(
+        {
+          alignItems: 'center',
+          gap: Math.round(24 * k),
+          alignSelf: spec.align === 'center' ? 'center' : 'flex-start',
+        },
+        mark,
+        eyebrow
+      )
+    );
+  }
 
   head.push(
     text(spec.title, {
@@ -194,10 +246,6 @@ function editorial(spec, tokens) {
     ...head
   );
 
-  const parts = [body];
-  const footer = footerRow(spec, tokens, k);
-  if (footer) parts.push(footer);
-
   return shell(
     spec,
     tokens,
@@ -210,7 +258,8 @@ function editorial(spec, tokens) {
         padding: pad,
         paddingTop: Math.round(pad * 1.1),
       },
-      ...parts
+      body,
+      footerRow(spec, tokens, k, { withLogo: false })
     )
   );
 }
@@ -218,19 +267,6 @@ function editorial(spec, tokens) {
 function stat(spec, tokens) {
   const k = spec.width / 1200;
   const pad = Math.round(72 * k);
-  const head = [];
-
-  const eyebrow = eyebrowRow(spec, tokens, k);
-  if (eyebrow) head.push(eyebrow);
-
-  head.push(
-    text(spec.title, {
-      fontFamily: DISPLAY,
-      fontSize: titleSize(spec.title, k, 64),
-      lineHeight: 1.1,
-      letterSpacing: Math.round(-1.2 * k),
-    })
-  );
 
   const cells = spec.stats.map((s) =>
     box(
@@ -240,26 +276,21 @@ function stat(spec, tokens) {
         borderLeft: `${Math.max(2, Math.round(4 * k))}px solid ${tokens.accent}`,
         paddingLeft: Math.round(20 * k),
       },
-      text(s.value, {
-        fontFamily: DISPLAY,
-        fontSize: Math.round(56 * k),
-        color: tokens.fg,
-      }),
-      text(s.label, {
-        fontFamily: MONO,
-        fontSize: Math.round(19 * k),
-        color: tokens.muted,
-      })
+      text(s.value, { fontFamily: DISPLAY, fontSize: Math.round(56 * k), color: tokens.fg }),
+      text(s.label, { fontFamily: MONO, fontSize: Math.round(19 * k), color: tokens.muted })
     )
   );
 
-  const parts = [
-    box({ flexDirection: 'column', gap: Math.round(22 * k) }, ...head),
-    box({ gap: Math.round(44 * k), flexGrow: 1, alignItems: 'center' }, ...cells),
-  ];
-
-  const footer = footerRow(spec, tokens, k);
-  if (footer) parts.push(footer);
+  const head = box(
+    { flexDirection: 'column', gap: Math.round(22 * k) },
+    eyebrowRow(spec, tokens, k),
+    text(spec.title, {
+      fontFamily: DISPLAY,
+      fontSize: titleSize(spec.title, k, 64),
+      lineHeight: 1.1,
+      letterSpacing: Math.round(-1.2 * k),
+    })
+  );
 
   return shell(
     spec,
@@ -274,7 +305,9 @@ function stat(spec, tokens) {
         paddingTop: Math.round(pad * 1.1),
         justifyContent: 'space-between',
       },
-      ...parts
+      head,
+      box({ gap: Math.round(44 * k), flexGrow: 1, alignItems: 'center' }, ...cells),
+      footerRow(spec, tokens, k)
     )
   );
 }
@@ -282,6 +315,7 @@ function stat(spec, tokens) {
 function minimal(spec, tokens) {
   const k = spec.width / 1200;
   const kids = [
+    logoMark(spec, k),
     text(spec.title, {
       fontFamily: DISPLAY,
       fontSize: titleSize(spec.title, k, 94),
@@ -350,7 +384,9 @@ function code(spec, tokens) {
   );
 
   const inner = [
-    box({ alignItems: 'center', justifyContent: 'space-between' }, chrome,
+    box(
+      { alignItems: 'center', justifyContent: 'space-between' },
+      chrome,
       text(spec.badge || spec.eyebrow || '', {
         fontFamily: MONO,
         fontSize: Math.round(20 * k),
@@ -376,23 +412,6 @@ function code(spec, tokens) {
     );
   }
 
-  const window_ = box(
-    {
-      flexDirection: 'column',
-      gap: Math.round(28 * k),
-      backgroundColor: tokens.bgAlt,
-      border: `${Math.max(1, Math.round(2 * k))}px solid ${tokens.rule}`,
-      borderRadius: Math.round(18 * k),
-      padding: Math.round(40 * k),
-      flexGrow: 1,
-    },
-    ...inner
-  );
-
-  const parts = [window_];
-  const footer = footerRow(spec, tokens, k);
-  if (footer) parts.push(footer);
-
   return shell(
     spec,
     tokens,
@@ -406,12 +425,278 @@ function code(spec, tokens) {
         paddingTop: Math.round(pad * 1.2),
         gap: Math.round(30 * k),
       },
-      ...parts
+      box(
+        {
+          flexDirection: 'column',
+          gap: Math.round(28 * k),
+          backgroundColor: tokens.bgAlt,
+          border: `${Math.max(1, Math.round(2 * k))}px solid ${tokens.rule}`,
+          borderRadius: Math.round(18 * k),
+          padding: Math.round(40 * k),
+          flexGrow: 1,
+        },
+        ...inner
+      ),
+      footerRow(spec, tokens, k)
     )
   );
 }
 
-const REGISTRY = { editorial, stat, minimal, code };
+/** Panel on the left carrying the mark, content on the right. */
+function split(spec, tokens) {
+  const k = spec.width / 1200;
+  const panelWidth = Math.round(spec.width * 0.32);
+
+  const panel = box(
+    {
+      width: panelWidth,
+      height: '100%',
+      backgroundColor: tokens.bgAlt,
+      borderRight: `${Math.max(2, Math.round(6 * k))}px solid ${tokens.accent}`,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexDirection: 'column',
+      gap: Math.round(20 * k),
+      padding: Math.round(40 * k),
+    },
+    logoMark(spec, k, Math.min(spec.logoWidth * 1.6, (panelWidth - Math.round(80 * k)) / k)),
+    !spec.logo && spec.site
+      ? text(spec.site, {
+          fontFamily: DISPLAY,
+          fontSize: Math.round(34 * k),
+          color: tokens.fg,
+          textAlign: 'center',
+        })
+      : null
+  );
+
+  // The content column is sized explicitly. A flex item defaults to a min
+  // width of auto, so a long unbroken headline would otherwise push straight
+  // through the right edge of the card.
+  const contentWidth = spec.width - panelWidth;
+  const kContent = (contentWidth - Math.round(128 * k)) / 1200;
+
+  const content = box(
+    {
+      flexDirection: 'column',
+      justifyContent: 'center',
+      gap: Math.round(22 * k),
+      width: contentWidth,
+      padding: Math.round(64 * k),
+    },
+    eyebrowRow(spec, tokens, k),
+    text(spec.title, {
+      fontFamily: DISPLAY,
+      fontSize: titleSize(spec.title, kContent, 92),
+      lineHeight: 1.1,
+      letterSpacing: Math.round(-1.2 * k),
+    }),
+    spec.subtitle
+      ? text(spec.subtitle, { fontSize: Math.round(27 * k), lineHeight: 1.4, color: tokens.muted })
+      : null,
+    spec.logo && spec.site
+      ? text(spec.site, {
+          fontFamily: MONO,
+          fontSize: Math.round(22 * k),
+          color: tokens.accent,
+          marginTop: Math.round(8 * k),
+        })
+      : null
+  );
+
+  return shell(
+    spec,
+    tokens,
+    box({ position: 'relative', width: '100%', height: '100%' }, panel, content),
+    { bar: false }
+  );
+}
+
+/** Pull quote, with the attribution carried by author, meta and site. */
+function quote(spec, tokens) {
+  const k = spec.width / 1200;
+  const pad = Math.round(80 * k);
+
+  const attribution = [];
+  if (spec.author) {
+    attribution.push(text(spec.author, { fontSize: Math.round(26 * k), color: tokens.fg }));
+  }
+  if (spec.meta || spec.site) {
+    attribution.push(
+      text(spec.meta || spec.site, {
+        fontFamily: MONO,
+        fontSize: Math.round(21 * k),
+        color: tokens.muted,
+      })
+    );
+  }
+
+  return shell(
+    spec,
+    tokens,
+    box(
+      {
+        position: 'relative',
+        flexDirection: 'column',
+        width: '100%',
+        height: '100%',
+        padding: pad,
+        paddingTop: Math.round(pad * 0.9),
+        justifyContent: 'center',
+        gap: Math.round(28 * k),
+      },
+      text('\u201C', {
+        fontFamily: DISPLAY,
+        fontSize: Math.round(150 * k),
+        lineHeight: 1,
+        height: Math.round(84 * k),
+        color: tokens.accent,
+      }),
+      text(spec.title, {
+        fontFamily: DISPLAY,
+        fontSize: titleSize(spec.title, k, 60),
+        lineHeight: 1.22,
+        letterSpacing: Math.round(-0.8 * k),
+      }),
+      attribution.length
+        ? box(
+            {
+              alignItems: 'center',
+              gap: Math.round(18 * k),
+              borderLeft: `${Math.max(2, Math.round(4 * k))}px solid ${tokens.accent}`,
+              paddingLeft: Math.round(20 * k),
+            },
+            logoMark(spec, k, Math.min(spec.logoWidth, 64)),
+            box({ flexDirection: 'column', gap: Math.round(4 * k) }, ...attribution)
+          )
+        : null
+    )
+  );
+}
+
+/** Compact horizontal lockup. Holds up at small preview sizes. */
+function banner(spec, tokens) {
+  const k = spec.width / 1200;
+
+  const copy = box(
+    { flexDirection: 'column', gap: Math.round(12 * k), flexGrow: 1 },
+    eyebrowRow(spec, tokens, k),
+    text(spec.title, {
+      fontFamily: DISPLAY,
+      fontSize: titleSize(spec.title, k, 66),
+      lineHeight: 1.08,
+      letterSpacing: Math.round(-1.4 * k),
+    }),
+    spec.subtitle
+      ? text(spec.subtitle, { fontSize: Math.round(28 * k), lineHeight: 1.35, color: tokens.muted })
+      : null,
+    spec.site
+      ? text(spec.site, {
+          fontFamily: MONO,
+          fontSize: Math.round(21 * k),
+          color: tokens.accent,
+          marginTop: Math.round(6 * k),
+        })
+      : null
+  );
+
+  return shell(
+    spec,
+    tokens,
+    box(
+      {
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        alignItems: 'center',
+        gap: Math.round(48 * k),
+        padding: Math.round(72 * k),
+      },
+      logoMark(spec, k, Math.max(spec.logoWidth, 120)),
+      copy
+    ),
+    { bar: false }
+  );
+}
+
+/** Byline card: category, headline, then author, date and read time. */
+function article(spec, tokens) {
+  const k = spec.width / 1200;
+  const pad = Math.round(72 * k);
+  const dot = () => text('\u00B7', { fontSize: Math.round(25 * k), color: tokens.rule });
+
+  const byline = [];
+  if (spec.author) {
+    byline.push(text(spec.author, { fontSize: Math.round(25 * k), color: tokens.fg }));
+  }
+  if (spec.date) {
+    if (byline.length) byline.push(dot());
+    byline.push(text(spec.date, { fontSize: Math.round(25 * k), color: tokens.muted }));
+  }
+  if (spec.meta) {
+    if (byline.length) byline.push(dot());
+    byline.push(
+      text(spec.meta, { fontFamily: MONO, fontSize: Math.round(21 * k), color: tokens.muted })
+    );
+  }
+
+  const head = box(
+    { alignItems: 'center', justifyContent: 'space-between' },
+    eyebrowRow(spec, tokens, k) ||
+      (spec.site
+        ? text(spec.site, { fontFamily: MONO, fontSize: Math.round(22 * k), color: tokens.accent })
+        : null),
+    logoMark(spec, k, Math.min(spec.logoWidth, 120))
+  );
+
+  const body = box(
+    { flexDirection: 'column', justifyContent: 'center', gap: Math.round(24 * k), flexGrow: 1 },
+    text(spec.title, {
+      fontFamily: DISPLAY,
+      fontSize: titleSize(spec.title, k, 72),
+      lineHeight: 1.1,
+      letterSpacing: Math.round(-1.6 * k),
+    }),
+    spec.subtitle
+      ? text(spec.subtitle, {
+          fontSize: Math.round(28 * k),
+          lineHeight: 1.4,
+          color: tokens.muted,
+          maxWidth: '90%',
+        })
+      : null
+  );
+
+  return shell(
+    spec,
+    tokens,
+    box(
+      {
+        position: 'relative',
+        flexDirection: 'column',
+        width: '100%',
+        height: '100%',
+        padding: pad,
+        paddingTop: Math.round(pad * 1.1),
+      },
+      head,
+      body,
+      byline.length
+        ? box(
+            {
+              alignItems: 'center',
+              gap: Math.round(12 * k),
+              borderTop: `${Math.max(1, Math.round(2 * k))}px solid ${tokens.rule}`,
+              paddingTop: Math.round(24 * k),
+            },
+            ...byline
+          )
+        : null
+    )
+  );
+}
+
+const REGISTRY = { editorial, stat, minimal, code, split, quote, banner, article };
 
 export function buildTree(spec) {
   const fn = REGISTRY[spec.template] || editorial;

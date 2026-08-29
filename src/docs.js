@@ -47,12 +47,19 @@ export function docsPage(origin) {
       <div><label for="s">Subtitle</label><input id="s" value="One endpoint for the card and the markup" /></div>
       <div><label for="e">Eyebrow</label><input id="e" value="Field notes" /></div>
       <div><label for="si">Site</label><input id="si" value="jakelabate.com" /></div>
+      <div><label for="lg">Logo URL</label><input id="lg" placeholder="https://example.com/logo.svg" /></div>
       <div><label for="tpl">Template</label><select id="tpl">
-        <option>editorial</option><option>stat</option><option>minimal</option><option>code</option>
+        <option>editorial</option><option>article</option><option>split</option><option>banner</option>
+        <option>quote</option><option>stat</option><option>minimal</option><option>code</option>
       </select></div>
       <div><label for="th">Theme</label><select id="th">
-        <option>indigo</option><option>ink</option><option>cream</option><option>paper</option><option>slate</option>
+        <option>indigo</option><option>ink</option><option>violet</option><option>sunset</option>
+        <option>forest</option><option>mono</option><option>cream</option><option>paper</option><option>slate</option>
       </select></div>
+      <div><label for="pt">Pattern</label><select id="pt">
+        <option>grid</option><option>dots</option><option>diagonal</option><option>glow</option><option>off</option>
+      </select></div>
+      <div><label for="ac">Accent override</label><input id="ac" placeholder="#2dd4bf" /></div>
     </div>
     <div>
       <img id="preview" class="preview" alt="Live preview of the generated card" />
@@ -68,7 +75,8 @@ export function docsPage(origin) {
     <tr><td>/v1/tags</td><td>JSON with the tag map, a ready to paste HTML block, and the absolute image URL.</td></tr>
     <tr><td>/v1/tags.html</td><td>Just the meta tag block as plain text.</td></tr>
     <tr><td>/v1/meta</td><td>Tags plus the resolved card spec, for build pipelines that want to log what was rendered.</td></tr>
-    <tr><td>/v1/themes</td><td>Available themes, templates, sizes and colour tokens.</td></tr>
+    <tr><td>/v1/embed.js</td><td>The client configuration script. Reads <code>data-*</code> attributes off its own tag.</td></tr>
+    <tr><td>/v1/themes</td><td>Available themes, templates, patterns, sizes and colour tokens.</td></tr>
     <tr><td>/health</td><td>Liveness.</td></tr>
   </table>
 
@@ -80,12 +88,16 @@ export function docsPage(origin) {
     <tr><td>eyebrow, badge</td><td>Small label above the headline, and a pill beside it.</td></tr>
     <tr><td>site, author</td><td>Footer line. site also feeds og:site_name.</td></tr>
     <tr><td>stat</td><td>Repeatable, format Value|Label, up to four. Used by the stat template.</td></tr>
-    <tr><td>template</td><td>editorial, stat, minimal, code.</td></tr>
-    <tr><td>theme</td><td>indigo, ink, cream, paper, slate.</td></tr>
+    <tr><td>date, meta</td><td>Byline detail for the article template, and the attribution line for quote.</td></tr>
+    <tr><td>logo</td><td>https URL to a PNG, JPEG, GIF or SVG. Fetched, sized from its own header, and inlined. A logo that fails to load is dropped rather than failing the card.</td></tr>
+    <tr><td>logoWidth</td><td>Display width in card pixels, 24 to 400. Height follows the intrinsic ratio.</td></tr>
+    <tr><td>template</td><td>editorial, article, split, banner, quote, stat, minimal, code.</td></tr>
+    <tr><td>theme</td><td>indigo, ink, violet, sunset, forest, mono, cream, paper, slate.</td></tr>
+    <tr><td>pattern</td><td>grid, dots, diagonal, glow, off.</td></tr>
     <tr><td>bg, bgAlt, fg, muted, accent, rule</td><td>Hex overrides on top of the chosen theme.</td></tr>
     <tr><td>size</td><td>og, square, wide, linkedin, story. Or pass w and h.</td></tr>
     <tr><td>scale</td><td>1 or 2. Renders at 2x for retina, tags report the scaled size.</td></tr>
-    <tr><td>align, pattern</td><td>left or center, and grid or off.</td></tr>
+    <tr><td>align</td><td>left or center.</td></tr>
     <tr><td>url, type, locale, card, twitter, alt</td><td>Markup only. These never fragment the image cache.</td></tr>
   </table>
 
@@ -94,11 +106,22 @@ export function docsPage(origin) {
   <p>Or let the service write the whole block:</p>
   <pre>curl -s "${origin}/v1/tags.html?title=Hello&amp;site=example.com&amp;url=https://example.com/"</pre>
 
+  <h2>Configure from a script tag</h2>
+  <p>Drop one tag, set the brand once, and every page under it gets a card. Anything you leave out is read off the page: headline from the h1 or title, description from the meta description, URL from the canonical.</p>
+  <pre>&lt;script src="${origin}/v1/embed.js"
+        data-theme="indigo"
+        data-template="article"
+        data-accent="#2dd4bf"
+        data-logo="https://example.com/logo.svg"
+        data-site="example.com"&gt;&lt;/script&gt;</pre>
+  <p>Every query parameter above works as a <code>data-</code> attribute, hyphenated: <code>data-logo-width</code>, <code>data-bg-alt</code>. Repeatable stats go in one attribute, comma separated: <code>data-stats="312%|Sessions,1.4s|LCP"</code>. Call <code>window.ogcdn.refresh({ title: 'New' })</code> after a client side route change.</p>
+  <p><strong>Read this before relying on it.</strong> Social crawlers do not execute JavaScript. Facebook, LinkedIn, X, Slack and iMessage parse the raw HTML response, so tags injected by this script are invisible to them. Use it for previewing a configuration and for consumers that do render. For crawlers, feed the same attributes to a build step (<code>examples/inject-tags.mjs</code>) or to the edge rewriter (<code>examples/edge-inject.js</code>), which reads this exact attribute vocabulary out of the page and emits real server side tags.</p>
+
   <h2>Caching</h2>
   <p>Images are immutable for a year and keyed on the sorted image parameters, so parameter order never splits the cache. Markup only parameters are excluded from that key. Changing any visual parameter produces a different URL and therefore a new render.</p>
 
 <script>
-  var ids = ['t','s','e','si','tpl','th'];
+  var ids = ['t','s','e','si','lg','tpl','th','pt','ac'];
   function update() {
     var p = new URLSearchParams();
     var title = document.getElementById('t').value;
@@ -109,8 +132,13 @@ export function docsPage(origin) {
     if (sub) p.set('subtitle', sub);
     if (eye) p.set('eyebrow', eye);
     if (site) p.set('site', site);
+    var logo = document.getElementById('lg').value;
+    var accent = document.getElementById('ac').value;
+    if (logo) p.set('logo', logo);
+    if (accent) p.set('accent', accent);
     p.set('template', document.getElementById('tpl').value);
     p.set('theme', document.getElementById('th').value);
+    p.set('pattern', document.getElementById('pt').value);
     if (document.getElementById('tpl').value === 'stat') {
       p.append('stat', '312%|Organic sessions');
       p.append('stat', '1.4s|LCP');
