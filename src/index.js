@@ -70,7 +70,7 @@ function serviceOrigin(request, env) {
  * only affects the markup, and must not fragment the image cache.
  */
 const IMAGE_PARAMS = new Set([
-  'title', 'subtitle', 'description', 'badge', 'site', 'author',
+  'title', 'subtitle', 'description', 'site', 'author',
   'stat', 'date', 'meta', 'theme', 'template', 'size', 'w', 'h', 'scale',
   'align', 'pattern', 'bg', 'bgAlt', 'fg', 'muted', 'accent', 'rule',
   'logo', 'logoWidth',
@@ -186,7 +186,6 @@ async function handleTags(request, env, url, mode) {
       tokens: spec.tokens,
       title: spec.title,
       subtitle: spec.subtitle,
-      badge: spec.badge,
       stats: spec.stats,
       date: spec.date,
       meta: spec.meta,

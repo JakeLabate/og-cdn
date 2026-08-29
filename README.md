@@ -68,12 +68,13 @@ size, so a 30 pixel subtitle arrives as 8 point type and nobody reads it.
 
 Consequences, all of them deliberate:
 
-- **No eyebrow.** Small grey uppercase labels vanish at preview scale. The
-  badge replaced it: a solid accent pill, high contrast, readable as a shape
-  even when the letters are not.
-- **Everything larger.** Headlines start at 104 to 132 pixels depending on
-  template, subtitles at 46 to 50, footers at 44. Nothing renders below 42
-  pixels, which is 11 point once scaled down.
+- **No label elements at all.** No eyebrow, no badge. Both were competing for
+  vertical space with the only thing anyone reads at that size, and both were
+  illegible themselves. What is left on a card is a headline, an optional
+  subtitle, an optional mark, and one attribution line.
+- **Everything larger.** Headlines start at 100 to 150 pixels depending on
+  template, subtitles at 50 to 54, footers at 46. Nothing renders below 44
+  pixels, which is 11.7 point once scaled down.
 - **Clamp, do not shrink.** Long text used to shrink until it fit, which just
   moved the failure from clipped to unreadable. Titles and subtitles now clamp
   to a line count with an ellipsis and hold their size.
@@ -96,7 +97,6 @@ clipped three cards at the bottom edge.
 | --- | --- |
 | `title` | Headline. Falls back to `site` when absent. |
 | `subtitle` | Also accepted as `description`. Feeds `og:description`. |
-| `badge` | A solid accent pill. The only label element on a card. |
 | `site`, `author` | Footer line. `site` also feeds `og:site_name`. |
 | `stat` | Repeatable, `Value|Label`, up to four. Used by the `stat` template. |
 | `date`, `meta` | Byline detail for `article`, attribution line for `quote`. |

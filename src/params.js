@@ -21,7 +21,6 @@ import {
 const LIMITS = {
   title: 180,
   subtitle: 300,
-  badge: 40,
   site: 80,
   author: 80,
   statLabel: 40,
@@ -106,7 +105,6 @@ export function parseSpec(searchParams) {
     scale: clampInt(sp.get('scale'), 1, 2, 1),
     title: clean(sp.get('title'), LIMITS.title),
     subtitle: clean(sp.get('subtitle') || sp.get('description'), LIMITS.subtitle),
-    badge: clean(sp.get('badge'), LIMITS.badge),
     site: clean(sp.get('site'), LIMITS.site),
     author: clean(sp.get('author'), LIMITS.author),
     stats: parseStats(sp),

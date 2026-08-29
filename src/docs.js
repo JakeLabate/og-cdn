@@ -45,7 +45,6 @@ export function docsPage(origin) {
     <div class="controls">
       <div><label for="t">Title</label><input id="t" value="Structured data, deployed at the edge" /></div>
       <div><label for="s">Subtitle</label><input id="s" value="One endpoint for the card and the markup" /></div>
-      <div><label for="e">Badge</label><input id="e" value="Field notes" /></div>
       <div><label for="si">Site</label><input id="si" value="jakelabate.com" /></div>
       <div><label for="lg">Logo URL</label><input id="lg" placeholder="https://example.com/logo.svg" /></div>
       <div><label for="tpl">Template</label><select id="tpl">
@@ -85,7 +84,6 @@ export function docsPage(origin) {
     <tr><th>Param</th><th>Notes</th></tr>
     <tr><td>title</td><td>Headline. Falls back to site when absent.</td></tr>
     <tr><td>subtitle</td><td>Also accepted as description. Feeds og:description.</td></tr>
-    <tr><td>badge</td><td>A solid accent pill beside the mark. The only label element, since small grey type disappears in a message preview.</td></tr>
     <tr><td>site, author</td><td>Footer line. site also feeds og:site_name.</td></tr>
     <tr><td>stat</td><td>Repeatable, format Value|Label, up to four. Used by the stat template.</td></tr>
     <tr><td>date, meta</td><td>Byline detail for the article template, and the attribution line for quote.</td></tr>
@@ -107,7 +105,7 @@ export function docsPage(origin) {
   <pre>curl -s "${origin}/v1/tags.html?title=Hello&amp;site=example.com&amp;url=https://example.com/"</pre>
 
   <h2>Sized for a message thread</h2>
-  <p>The constraint is not the 1200 by 630 canvas, it is what survives at roughly 300 points wide in a text message. That is close to a quarter size. So there is no eyebrow (small grey labels vanish), type starts much larger, nothing renders below 42 pixels which is 11 point once scaled, and long text clamps with an ellipsis rather than shrinking until it fits. Two test gates enforce both the size floor and that no template overflows its own card.</p>
+  <p>The constraint is not the 1200 by 630 canvas, it is what survives at roughly 300 points wide in a text message. That is close to a quarter size. So there are no label elements at all, no eyebrow and no chip, since both competed for space with the only thing anyone reads at that size. Type starts much larger, nothing renders below 42 pixels which is 11 point once scaled, and long text clamps with an ellipsis rather than shrinking until it fits. Two test gates enforce both the size floor and that no template overflows its own card.</p>
 
   <h2>Configure from a script tag</h2>
   <p>Drop one tag, set the brand once, and every page under it gets a card. Anything you leave out is read off the page: headline from the h1 or title, description from the meta description, URL from the canonical.</p>
@@ -124,16 +122,14 @@ export function docsPage(origin) {
   <p>Images are immutable for a year and keyed on the sorted image parameters, so parameter order never splits the cache. Markup only parameters are excluded from that key. Changing any visual parameter produces a different URL and therefore a new render.</p>
 
 <script>
-  var ids = ['t','s','e','si','lg','tpl','th','pt','ac'];
+  var ids = ['t','s','si','lg','tpl','th','pt','ac'];
   function update() {
     var p = new URLSearchParams();
     var title = document.getElementById('t').value;
     var sub = document.getElementById('s').value;
-    var badge = document.getElementById('e').value;
     var site = document.getElementById('si').value;
     if (title) p.set('title', title);
     if (sub) p.set('subtitle', sub);
-    if (badge) p.set('badge', badge);
     if (site) p.set('site', site);
     var logo = document.getElementById('lg').value;
     var accent = document.getElementById('ac').value;

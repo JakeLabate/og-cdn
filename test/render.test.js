@@ -81,19 +81,19 @@ function stubFetch(bytes, { type = 'image/svg+xml', status = 200, length = null 
 const realFetch = globalThis.fetch;
 
 const cases = [
-  ['editorial-indigo', 'template=editorial&theme=indigo&badge=Field%20notes&title=Structured%20data%20is%20the%20substrate%20both%20engines%20feed%20on&subtitle=Why%20the%20same%20markup%20serves%20classic%20search%20and%20generative%20answers&site=jakelabate.com&author=Jake%20Labate'],
-  ['editorial-cream', 'template=editorial&theme=cream&badge=New&title=SchemaCDN&subtitle=Deploy%20and%20govern%20structured%20data%20across%20every%20template&site=schemacdn.com'],
-  ['stat-ink', 'template=stat&theme=ink&badge=Audit&title=Technical%20SEO%20audit%20results&stat=312%25%7COrganic%20sessions&stat=1.4s%7CLCP&stat=98%7CPages%20fixed&site=jakelabate.com'],
+  ['editorial-indigo', 'template=editorial&theme=indigo&title=Structured%20data%20is%20the%20substrate%20both%20engines%20feed%20on&subtitle=Why%20the%20same%20markup%20serves%20classic%20search%20and%20generative%20answers&site=jakelabate.com&author=Jake%20Labate'],
+  ['editorial-cream', 'template=editorial&theme=cream&title=SchemaCDN&subtitle=Deploy%20and%20govern%20structured%20data%20across%20every%20template&site=schemacdn.com'],
+  ['stat-ink', 'template=stat&theme=ink&title=Technical%20SEO%20audit%20results&stat=312%25%7COrganic%20sessions&stat=1.4s%7CLCP&stat=98%7CPages%20fixed&site=jakelabate.com'],
   ['minimal-paper', 'template=minimal&theme=paper&title=Open%20Graph%2C%20on%20demand&subtitle=One%20endpoint%20for%20the%20card%20and%20the%20markup&site=og.jakelabate.com'],
-  ['code-slate', 'template=code&theme=slate&badge=curl&title=curl%20-s%20https%3A%2F%2Fog.example.com%2Fv1%2Ftags.html%3Ftitle%3DHello&subtitle=%23%20writes%20the%20whole%20head%20block%20for%20you&site=og.example.com'],
+  ['code-slate', 'template=code&theme=slate&title=curl%20-s%20https%3A%2F%2Fog.example.com%2Fv1%2Ftags.html%3Ftitle%3DHello&subtitle=%23%20writes%20the%20whole%20head%20block%20for%20you&site=og.example.com'],
   ['long-title-overflow', 'template=editorial&theme=indigo&title=' + encodeURIComponent('A deliberately overlong headline used to prove the size ramp keeps very long strings inside the safe area of the card without clipping or overflow') + '&site=example.com'],
   ['custom-colors', 'template=editorial&theme=indigo&bg=%23120b1f&accent=%23f0abfc&fg=fff&title=Custom%20token%20override&site=example.com'],
   ['square-2x', 'size=square&scale=2&template=minimal&theme=ink&title=Square%20at%202x&site=example.com'],
-  ['split-violet', 'template=split&theme=violet&pattern=glow&badge=Case%20study&title=Rebuilding%20a%20product%20taxonomy%20around%20intent&subtitle=Nine%20months%2C%20four%20thousand%20URLs&site=jakelabate.com&logo=1'],
+  ['split-violet', 'template=split&theme=violet&pattern=glow&title=Rebuilding%20a%20product%20taxonomy%20around%20intent&subtitle=Nine%20months%2C%20four%20thousand%20URLs&site=jakelabate.com&logo=1'],
   ['quote-sunset', 'template=quote&theme=sunset&pattern=dots&title=' + encodeURIComponent('The same markup feeds both engines, so the argument about which one matters is the wrong argument.') + '&author=Jake%20Labate&meta=SEO%20Consultant&logo=1'],
-  ['banner-forest', 'template=banner&theme=forest&pattern=diagonal&badge=Release&title=SchemaCDN%202.0&subtitle=Governed%20structured%20data%2C%20one%20deploy&site=schemacdn.com&logo=1'],
-  ['article-mono', 'template=article&theme=mono&pattern=off&badge=Field%20notes&title=What%20Open%20Graph%20actually%20guarantees&subtitle=And%20the%20four%20places%20every%20implementation%20quietly%20breaks&author=Jake%20Labate&date=Aug%2029%2C%202026&meta=6%20min%20read&logo=1'],
-  ['editorial-logo-glow', 'template=editorial&theme=indigo&pattern=glow&badge=Service&title=Open%20Graph%20as%20an%20edge%20API&subtitle=The%20card%20and%20the%20markup%20from%20one%20origin&site=og.jakelabate.com&author=Jake%20Labate&logo=1'],
+  ['banner-forest', 'template=banner&theme=forest&pattern=diagonal&title=SchemaCDN%202.0&subtitle=Governed%20structured%20data%2C%20one%20deploy&site=schemacdn.com&logo=1'],
+  ['article-mono', 'template=article&theme=mono&pattern=off&title=What%20Open%20Graph%20actually%20guarantees&subtitle=And%20the%20four%20places%20every%20implementation%20quietly%20breaks&author=Jake%20Labate&date=Aug%2029%2C%202026&meta=6%20min%20read&logo=1'],
+  ['editorial-logo-glow', 'template=editorial&theme=indigo&pattern=glow&title=Open%20Graph%20as%20an%20edge%20API&subtitle=The%20card%20and%20the%20markup%20from%20one%20origin&site=og.jakelabate.com&author=Jake%20Labate&logo=1'],
 ];
 
 console.log('render cases');
@@ -307,7 +307,7 @@ console.log('\nlegibility floor (message preview)');
   const probes = [
     ['short title', 'title=Ship%20it'],
     ['long title', 'title=' + encodeURIComponent('A deliberately overlong headline that would once have been shrunk into illegibility rather than clamped')],
-    ['full card', 'title=Open%20Graph%20as%20an%20edge%20API&subtitle=The%20card%20and%20the%20markup%20from%20one%20origin&site=og.jakelabate.com&author=Jake%20Labate&badge=New'],
+    ['full card', 'title=Open%20Graph%20as%20an%20edge%20API&subtitle=The%20card%20and%20the%20markup%20from%20one%20origin&site=og.jakelabate.com&author=Jake%20Labate'],
     ['stats', 'template=stat&title=Audit%20results&stat=312%25%7COrganic%20sessions&stat=1.4s%7CLCP&stat=98%7CPages%20fixed&site=example.com'],
     ['article', 'template=article&title=What%20Open%20Graph%20guarantees&subtitle=And%20where%20it%20breaks&author=Jake%20Labate&date=Aug%2029%2C%202026&meta=6%20min%20read&site=example.com'],
   ];
@@ -347,7 +347,9 @@ console.log('\nlegibility floor (message preview)');
   const titlePx = Math.max(...sizesUsed());
   check('long titles clamp instead of shrinking below the floor', titlePx >= 78, `${titlePx}px`);
 
-  check('eyebrow is gone from the spec', !('eyebrow' in parseSpec(new URLSearchParams('eyebrow=nope'))));
+  const stripped = parseSpec(new URLSearchParams('eyebrow=nope&badge=nope'));
+  check('eyebrow is gone from the spec', !('eyebrow' in stripped));
+  check('badge is gone from the spec', !('badge' in stripped));
 }
 
 
@@ -358,8 +360,8 @@ console.log('\noverflow (content must fit the canvas)');
   // content against the card it has to fit inside.
   const probes = [
     ['bare', 'title=Ship%20it'],
-    ['full', 'title=Open%20Graph%20as%20an%20edge%20API%20for%20every%20project&subtitle=The%20card%20and%20the%20markup%20from%20one%20origin%2C%20cached%20at%20the%20edge&site=og.jakelabate.com&author=Jake%20Labate&badge=New&stat=312%25%7COrganic&stat=1.4s%7CLCP&stat=98%7CFixed&date=Aug%2029&meta=6%20min%20read'],
-    ['long', 'title=' + encodeURIComponent('word '.repeat(40)) + '&subtitle=' + encodeURIComponent('filler '.repeat(40)) + '&site=example.com&author=Someone&badge=Long&stat=1%7CA&stat=2%7CB&stat=3%7CC&date=Aug&meta=9%20min'],
+    ['full', 'title=Open%20Graph%20as%20an%20edge%20API%20for%20every%20project&subtitle=The%20card%20and%20the%20markup%20from%20one%20origin%2C%20cached%20at%20the%20edge&site=og.jakelabate.com&author=Jake%20Labate&stat=312%25%7COrganic&stat=1.4s%7CLCP&stat=98%7CFixed&date=Aug%2029&meta=6%20min%20read'],
+    ['long', 'title=' + encodeURIComponent('word '.repeat(40)) + '&subtitle=' + encodeURIComponent('filler '.repeat(40)) + '&site=example.com&author=Someone&stat=1%7CA&stat=2%7CB&stat=3%7CC&date=Aug&meta=9%20min'],
     ['unbroken', 'title=' + encodeURIComponent('Supercalifragilisticexpialidocious'.repeat(4)) + '&subtitle=short&site=example.com'],
   ];
 

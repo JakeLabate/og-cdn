@@ -150,26 +150,6 @@ function shell(spec, tokens, inner, { bar = true } = {}) {
   );
 }
 
-/**
- * The badge is the only label element on a card now. It survives a message
- * preview because it is a solid accent block, not small grey type.
- */
-function badgePill(spec, tokens, k) {
-  if (!spec.badge) return null;
-  return text(spec.badge, {
-    fontFamily: MONO,
-    fontSize: Math.round(SCALE.badge * k),
-    color: tokens.bg,
-    backgroundColor: tokens.accent,
-    // Text leaves are blocks now, and a block in a flex column stretches to
-    // the full width. Only the badge has a background, so only the badge shows
-    // it, as a pill running the whole card.
-    alignSelf: 'flex-start',
-    padding: `${Math.round(10 * k)}px ${Math.round(22 * k)}px`,
-    borderRadius: Math.round(8 * k),
-  });
-}
-
 function titleText(spec, tokens, k, lines = 3, base) {
   return text(spec.title, {
     fontFamily: DISPLAY,
@@ -237,20 +217,11 @@ function editorial(spec, tokens) {
   const pad = Math.round(50 * k);
 
   const mark = logoMark(spec, k);
-  const badge = badgePill(spec, tokens, k);
 
   const head = [];
-  if (mark || badge) {
+  if (mark) {
     head.push(
-      box(
-        {
-          alignItems: 'center',
-          gap: Math.round(24 * k),
-          alignSelf: spec.align === 'center' ? 'center' : 'flex-start',
-        },
-        mark,
-        badge
-      )
+      box({ alignSelf: spec.align === 'center' ? 'center' : 'flex-start' }, mark)
     );
   }
   // Three lines only when there is no subtitle competing for the space.
@@ -319,7 +290,6 @@ function stat(spec, tokens) {
 
   const head = box(
     { flexDirection: 'column', gap: Math.round(18 * k), alignItems: 'flex-start' },
-    badgePill(spec, tokens, k),
     titleText(spec, tokens, k, 2)
   );
 
@@ -402,18 +372,7 @@ function code(spec, tokens) {
   );
 
   const inner = [
-    box(
-      { alignItems: 'center', justifyContent: 'space-between', height: Math.round(28 * k) },
-      chrome,
-      spec.badge
-        ? text(spec.badge, {
-            fontFamily: MONO,
-            fontSize: Math.round(SCALE.bylineMeta * k),
-            color: tokens.muted,
-            ...clamped(1),
-          })
-        : null
-    ),
+    box({ alignItems: 'center', height: Math.round(28 * k) }, chrome),
     text(spec.title, {
       fontFamily: MONO,
       fontSize: titleSize(spec.title, k, TITLE_BASE.code),
@@ -508,7 +467,6 @@ function split(spec, tokens) {
       width: contentWidth,
       padding: Math.round(56 * k),
     },
-    badgePill(spec, tokens, k),
     text(spec.title, {
       fontFamily: DISPLAY,
       fontSize: titleSize(spec.title, kContent, 150),
@@ -582,7 +540,7 @@ function quote(spec, tokens) {
         lineHeight: 1,
         color: tokens.accent,
       }),
-      titleText(spec, tokens, k, 3, TITLE_BASE.quote),
+      titleText(spec, tokens, k, 2, TITLE_BASE.quote),
       attribution.length
         ? box(
             {
@@ -605,7 +563,6 @@ function banner(spec, tokens) {
 
   const copy = box(
     { flexDirection: 'column', gap: Math.round(16 * k), flexGrow: 1 },
-    badgePill(spec, tokens, k),
     titleText(spec, tokens, k, 2),
     subtitleText(spec, tokens, k, { lines: 2, tight: true }),
     spec.site
@@ -674,15 +631,14 @@ function article(spec, tokens) {
 
   const head = box(
     { alignItems: 'center', justifyContent: 'space-between' },
-    badgePill(spec, tokens, k) ||
-      (spec.site
-        ? text(spec.site, {
-            fontFamily: MONO,
-            fontSize: Math.round(SCALE.footer * k),
-            color: tokens.accent,
-            ...clamped(1),
-          })
-        : null),
+    spec.site
+      ? text(spec.site, {
+          fontFamily: MONO,
+          fontSize: Math.round(SCALE.footer * k),
+          color: tokens.accent,
+          ...clamped(1),
+        })
+      : null,
     logoMark(spec, k, Math.min(spec.logoWidth, 140))
   );
 

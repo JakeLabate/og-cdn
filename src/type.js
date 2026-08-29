@@ -24,29 +24,28 @@ export const MIN_SIZE = Math.ceil(MIN_APPARENT_PT / (PREVIEW_WIDTH / 1200));
  * and never re-litigated inside a template.
  */
 export const SCALE = {
-  titleFloor: 78,
-  subtitle: 50,
-  subtitleTight: 46,
-  footer: 44,
-  byline: 44,
-  bylineMeta: 42,
-  badge: 42,
-  statValue: 92,
-  statLabel: 42,
-  quoteGlyph: 104,
-  codeBody: 44,
+  titleFloor: 84,
+  subtitle: 54,
+  subtitleTight: 50,
+  footer: 46,
+  byline: 46,
+  bylineMeta: 44,
+  statValue: 102,
+  statLabel: 44,
+  quoteGlyph: 112,
+  codeBody: 46,
 };
 
 /** Base title size per template. Tuned against Space Grotesk 700 metrics. */
 export const TITLE_BASE = {
-  editorial: 124,
-  article: 116,
-  minimal: 132,
-  banner: 112,
-  split: 104,
-  quote: 92,
-  stat: 104,
-  code: 52,
+  editorial: 140,
+  article: 130,
+  minimal: 150,
+  banner: 124,
+  split: 116,
+  quote: 100,
+  stat: 116,
+  code: 56,
 };
 
 /**
