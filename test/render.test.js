@@ -15,6 +15,7 @@ import { parseSpec, parseMeta, canonicalQuery } from '../src/params.js';
 import { buildTags, tagsToHtml, tagsToObject } from '../src/tags.js';
 import { imageSize, resolveLogo } from '../src/assets.js';
 import { embedScript } from '../src/embed.js';
+import { normalizePrefix, resolveBase, routePath } from '../src/routing.js';
 import { PATTERNS, TEMPLATES, THEMES } from '../src/theme.js';
 import { sizesUsed, spacesUsed } from '../src/templates.js';
 import {
@@ -98,8 +99,8 @@ const cases = [
   ['editorial-indigo', 'template=editorial&theme=indigo&title=Structured%20data%20is%20the%20substrate%20both%20engines%20feed%20on&subtitle=Why%20the%20same%20markup%20serves%20classic%20search%20and%20generative%20answers&site=jakelabate.com&author=Jake%20Labate'],
   ['editorial-cream', 'template=editorial&theme=cream&title=SchemaCDN&subtitle=Deploy%20and%20govern%20structured%20data%20across%20every%20template&site=schemacdn.com'],
   ['stat-ink', 'template=stat&theme=ink&title=Technical%20SEO%20audit%20results&stat=312%25%7COrganic%20sessions&stat=1.4s%7CLCP&stat=98%7CPages%20fixed&site=jakelabate.com'],
-  ['minimal-paper', 'template=minimal&theme=paper&title=Open%20Graph%2C%20on%20demand&subtitle=One%20endpoint%20for%20the%20card%20and%20the%20markup&site=og.jakelabate.com'],
-  ['code-slate', 'template=code&theme=slate&title=curl%20-s%20https%3A%2F%2Fog.example.com%2Fv1%2Ftags.html%3Ftitle%3DHello&subtitle=%23%20writes%20the%20whole%20head%20block%20for%20you&site=og.example.com'],
+  ['minimal-paper', 'template=minimal&theme=paper&title=Open%20Graph%2C%20on%20demand&subtitle=One%20endpoint%20for%20the%20card%20and%20the%20markup&site=cdn.jakelabate.com'],
+  ['code-slate', 'template=code&theme=slate&title=curl%20-s%20https%3A%2F%2Fcdn.jakelabate.com%2Fopen-graph%2Fv1%2Ftags.html&subtitle=%23%20writes%20the%20whole%20head%20block%20for%20you&site=cdn.jakelabate.com'],
   ['long-title-overflow', 'template=editorial&theme=indigo&title=' + encodeURIComponent('A deliberately overlong headline used to prove the size ramp keeps very long strings inside the safe area of the card without clipping or overflow') + '&site=example.com'],
   ['custom-colors', 'template=editorial&theme=indigo&bg=%23120b1f&accent=%23f0abfc&fg=fff&title=Custom%20token%20override&site=example.com'],
   ['square-2x', 'size=square&scale=2&template=minimal&theme=ink&title=Square%20at%202x&site=example.com'],
@@ -508,12 +509,69 @@ console.log('\ndesign system conformance');
   check('a headline with a deck drops a step', deckedTitle < soloTitle, `${deckedTitle} vs ${soloTitle}`);
 }
 
+
+console.log('\nmounting under a path');
+{
+  const env = { PUBLIC_BASE: 'https://cdn.jakelabate.com/open-graph' };
+
+  const mounted = resolveBase('https://cdn.jakelabate.com/open-graph/v1/og.png?title=x', env);
+  check('base is the public base, path included', mounted.base === 'https://cdn.jakelabate.com/open-graph', mounted.base);
+  check('prefix comes off the public base', mounted.prefix === '/open-graph', mounted.prefix);
+
+  // The case the whole thing exists for: a build box hits the worker on its
+  // workers.dev origin, and the tags it gets back must still point at the
+  // public hostname.
+  const viaWorkersDev = resolveBase('https://og-cdn.jake.workers.dev/open-graph/v1/tags', env);
+  check('tags built off a different origin still point at the public base',
+    viaWorkersDev.base === 'https://cdn.jakelabate.com/open-graph', viaWorkersDev.base);
+
+  check('mount root routes to the docs page', routePath('/open-graph', '/open-graph') === '/');
+  check('trailing slash routes to the docs page', routePath('/open-graph/', '/open-graph') === '/');
+  check('nested route strips the prefix', routePath('/open-graph/v1/og.png', '/open-graph') === '/v1/og.png');
+  check('trailing slash on a route is ignored', routePath('/open-graph/v1/tags/', '/open-graph') === '/v1/tags');
+
+  // Anything outside the mount is not ours, and must not be answered as if a
+  // route were merely missing.
+  check('a sibling path is not ours', routePath('/other/thing', '/open-graph') === null);
+  check('a prefix that is only a string prefix is not ours',
+    routePath('/open-graphics/v1/og.png', '/open-graph') === null);
+  check('the bare hostname root is not ours', routePath('/', '/open-graph') === null);
+
+  // Unmounted, the service still works at a hostname root.
+  const rootMount = resolveBase('https://og.example.com/v1/og.png', {});
+  check('no prefix configured means no prefix', rootMount.prefix === '' && rootMount.base === 'https://og.example.com', rootMount.base);
+  check('routing is unchanged at the root', routePath('/v1/og.png', '') === '/v1/og.png');
+
+  check('prefix normalisation is total',
+    normalizePrefix('open-graph') === '/open-graph' &&
+    normalizePrefix('/open-graph/') === '/open-graph' &&
+    normalizePrefix('/') === '' &&
+    normalizePrefix('') === '' &&
+    normalizePrefix(undefined) === '');
+
+  // A malformed setting should degrade, not take the service down.
+  const broken = resolveBase('https://og.example.com/v1/tags', { PUBLIC_BASE: 'not a url' });
+  check('a malformed PUBLIC_BASE falls back to the request origin', broken.base === 'https://og.example.com', broken.base);
+
+  const pathOnly = resolveBase('https://preview.example.com/open-graph/v1/tags', { BASE_PATH: 'open-graph' });
+  check('BASE_PATH mounts without pinning the hostname',
+    pathOnly.base === 'https://preview.example.com/open-graph', pathOnly.base);
+
+  // The embed script and every generated URL must carry the path.
+  const src = embedScript('https://cdn.jakelabate.com/open-graph');
+  check('embed script bakes in the full base',
+    src.includes('"https://cdn.jakelabate.com/open-graph"'));
+  check('embed script builds image URLs under the mount',
+    src.includes("BASE + '/v1/og.png?'"));
+}
+
 console.log('\nno em dashes in source');
 {
   const files = [
     'src/index.js', 'src/render.js', 'src/params.js', 'src/tags.js',
     'src/templates.js', 'src/theme.js', 'src/sign.js', 'src/docs.js',
-    'src/assets.js', 'src/embed.js', 'src/scale.js', 'examples/inject-tags.mjs',
+    'src/assets.js', 'src/embed.js', 'src/scale.js', 'src/routing.js',
+    'examples/inject-tags.mjs',
     'examples/edge-inject.js', 'test/render.test.js', 'README.md',
   ];
   let found = [];

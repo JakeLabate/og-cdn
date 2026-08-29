@@ -5,7 +5,7 @@
  * matches each page, and splices it into the head. Run it after your site
  * builds and before you publish.
  *
- *   node examples/inject-tags.mjs ./dist https://og.example.com https://example.com
+ *   node examples/inject-tags.mjs ./dist https://cdn.example.com/open-graph https://example.com
  *
  * Existing og: and twitter: tags are removed first, so the script is safe to
  * run repeatedly on the same output folder.
@@ -14,7 +14,17 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 
-const [, , distDir = './dist', service = 'http://localhost:8787', siteBase = ''] = process.argv;
+const [
+  ,
+  ,
+  distDir = './dist',
+  service = 'http://localhost:8787',
+  siteBase = '',
+] = process.argv;
+
+// `service` is the full base including any path the worker is mounted under,
+// for example https://cdn.example.com/open-graph
+const base = service.replace(/\/+$/, '');
 
 const DEFAULTS = { theme: 'indigo', template: 'editorial', site: hostOf(siteBase) };
 
@@ -68,7 +78,7 @@ for await (const file of htmlFiles(distDir)) {
   const url = pageUrl(file);
   if (url) params.set('url', url);
 
-  const res = await fetch(`${service}/v1/tags?${params}`);
+  const res = await fetch(`${base}/v1/tags?${params}`);
   if (!res.ok) {
     console.error('tag request failed:', file, res.status, await res.text());
     continue;

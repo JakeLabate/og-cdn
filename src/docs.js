@@ -3,7 +3,7 @@
  * own deployed version rather than whatever a README last said.
  */
 
-export function docsPage(origin) {
+export function docsPage(base) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -100,9 +100,9 @@ export function docsPage(origin) {
   </table>
 
   <h2>Use it</h2>
-  <pre>&lt;meta property="og:image" content="${origin}/v1/og.png?title=Hello&amp;theme=indigo" /&gt;</pre>
+  <pre>&lt;meta property="og:image" content="${base}/v1/og.png?title=Hello&amp;theme=indigo" /&gt;</pre>
   <p>Or let the service write the whole block:</p>
-  <pre>curl -s "${origin}/v1/tags.html?title=Hello&amp;site=example.com&amp;url=https://example.com/"</pre>
+  <pre>curl -s "${base}/v1/tags.html?title=Hello&amp;site=example.com&amp;url=https://example.com/"</pre>
 
   <h2>The design system</h2>
   <p>Type is a modular scale of seven steps, <code>44 55 69 86 107 134 168</code>, a 1.25 ratio applied to a base of 44. The base is the legibility floor rather than a chosen body size: a link preview in a message thread renders around 300 points wide, close to a quarter of the card, so 44 pixels is 11.7 point where it actually gets read.</p>
@@ -113,7 +113,7 @@ export function docsPage(origin) {
 
   <h2>Configure from a script tag</h2>
   <p>Drop one tag, set the brand once, and every page under it gets a card. Anything you leave out is read off the page: headline from the h1 or title, description from the meta description, URL from the canonical.</p>
-  <pre>&lt;script src="${origin}/v1/embed.js"
+  <pre>&lt;script src="${base}/v1/embed.js"
         data-theme="indigo"
         data-template="article"
         data-accent="#2dd4bf"
@@ -148,8 +148,8 @@ export function docsPage(origin) {
       p.append('stat', '98|Pages fixed');
     }
     var u = '/v1/og.png?' + p.toString();
-    document.getElementById('preview').src = u;
-    document.getElementById('url').textContent = '${origin}' + u;
+    document.getElementById('preview').src = '${base}' + u;
+    document.getElementById('url').textContent = '${base}' + u;
   }
   ids.forEach(function (id) {
     var el = document.getElementById(id);

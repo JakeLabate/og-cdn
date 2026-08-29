@@ -32,13 +32,13 @@ renders are served from the Cloudflare edge cache and never re-execute.
 Point a tag straight at it:
 
 ```html
-<meta property="og:image" content="https://og.example.com/v1/og.png?title=Hello&theme=indigo" />
+<meta property="og:image" content="https://cdn.jakelabate.com/open-graph/v1/og.png?title=Hello&theme=indigo" />
 ```
 
 Or have the service write the whole block:
 
 ```bash
-curl -s "https://og.example.com/v1/tags.html?title=Hello&site=example.com&url=https://example.com/"
+curl -s "https://cdn.jakelabate.com/open-graph/v1/tags.html?title=Hello&site=example.com&url=https://example.com/"
 ```
 
 ```html
@@ -46,7 +46,7 @@ curl -s "https://og.example.com/v1/tags.html?title=Hello&site=example.com&url=ht
 <meta property="og:title" content="Hello" />
 <meta property="og:url" content="https://example.com/" />
 <meta property="og:site_name" content="example.com" />
-<meta property="og:image" content="https://og.example.com/v1/og.png?site=example.com&title=Hello" />
+<meta property="og:image" content="https://cdn.jakelabate.com/open-graph/v1/og.png?site=example.com&title=Hello" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta name="twitter:card" content="summary_large_image" />
@@ -55,7 +55,7 @@ curl -s "https://og.example.com/v1/tags.html?title=Hello&site=example.com&url=ht
 In a build step:
 
 ```js
-const res = await fetch(`https://og.example.com/v1/tags?${params}`);
+const res = await fetch(`https://cdn.jakelabate.com/open-graph/v1/tags?${params}`);
 const { html } = await res.json();
 // splice html into <head>
 ```
@@ -199,7 +199,7 @@ attribute values are escaped on the way into HTML.
 Drop one tag, set the brand once, and every page under it gets a card:
 
 ```html
-<script src="https://og.example.com/v1/embed.js"
+<script src="https://cdn.jakelabate.com/open-graph/v1/embed.js"
         data-theme="indigo"
         data-template="article"
         data-accent="#2dd4bf"
@@ -289,18 +289,46 @@ npx wrangler login
 npm run deploy
 ```
 
-Then set the public origin so generated URLs are absolute against your
-hostname rather than whichever origin a build box happened to hit. In
-`wrangler.toml`:
+### Mounting under a path
+
+The service is configured to live at `cdn.jakelabate.com/open-graph`, so the
+rest of that hostname is untouched. One setting drives it:
 
 ```toml
 [vars]
-PUBLIC_ORIGIN = "https://og.example.com"
+PUBLIC_BASE = "https://cdn.jakelabate.com/open-graph"
+
+[[routes]]
+pattern = "cdn.jakelabate.com/open-graph*"
+zone_name = "jakelabate.com"
 ```
 
-For a custom hostname on a zone already in Cloudflare, uncomment the
-`routes` block in `wrangler.toml` and redeploy. Workers custom domains
-provision their own certificate, so no separate DNS record is needed.
+`PUBLIC_BASE` answers two separate questions that are easy to conflate. Its
+path is the prefix stripped before routing, and the whole value is the base
+every generated `og:image` URL is absolute against. Those differ in practice:
+a build box may reach the worker on its `workers.dev` origin, and the tags it
+gets back still have to point at the public hostname. Keeping them separate is
+what makes that work.
+
+To mount somewhere else, change both the route pattern and `PUBLIC_BASE`. To
+serve from the root of a hostname instead, drop the path from `PUBLIC_BASE`
+and use a custom domain rather than a route.
+
+### The DNS record this needs
+
+A Workers route only fires on traffic that reaches Cloudflare's edge, and a
+route on its own does not create a hostname. If `cdn.jakelabate.com` does not
+already exist in the zone, add a proxied record for it:
+
+```
+Type AAAA   Name cdn   Content 100::   Proxy ON (orange)
+```
+
+`100::` is the IPv6 discard prefix, the standard placeholder for a hostname
+that exists only to be intercepted by a Worker. The record must be proxied.
+Grey cloud means Cloudflare answers with the origin address and never runs the
+Worker, which is the usual reason a correct route appears to do nothing. This
+is independent of how the apex record is configured.
 
 ## Fonts
 

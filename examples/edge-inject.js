@@ -15,7 +15,7 @@
  *   zone_name = "example.com"
  *
  *   [vars]
- *   OG_SERVICE = "https://og.example.com"
+ *   OG_SERVICE = "https://cdn.example.com/open-graph"
  *
  * If you would rather not add a script tag to the page at all, set
  * OG_DEFAULTS to a query string and every page gets the same brand config

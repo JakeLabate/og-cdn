@@ -26,6 +26,7 @@ import { PATTERNS, SIZES, TEMPLATES, THEMES } from './theme.js';
 import { resolveLogo } from './assets.js';
 import { docsPage } from './docs.js';
 import { embedScript } from './embed.js';
+import { resolveBase, routePath } from './routing.js';
 
 const FONTS = [
   { name: 'Space Grotesk', data: spaceGroteskBold, weight: 700, style: 'normal' },
@@ -58,12 +59,7 @@ function fail(status, message, hint) {
   return json({ error: message, hint }, status, { 'cache-control': 'no-store' });
 }
 
-/** The origin the caller reached us on, so generated URLs stay on brand. */
-function serviceOrigin(request, env) {
-  if (env.PUBLIC_ORIGIN) return env.PUBLIC_ORIGIN.replace(/\/$/, '');
-  const u = new URL(request.url);
-  return `${u.protocol}//${u.host}`;
-}
+
 
 /**
  * Params that affect the picture. Everything else (url, type, locale, card)
@@ -84,16 +80,16 @@ function imageParams(searchParams) {
   return out;
 }
 
-async function buildImageUrl(request, env, searchParams, ext = 'png') {
+async function buildImageUrl(base, env, searchParams, ext = 'png') {
   const params = imageParams(searchParams);
   const canonical = canonicalQuery(params);
-  const base = `${serviceOrigin(request, env)}/v1/og.${ext}`;
-  if (!env.SIGNING_KEY) return canonical ? `${base}?${canonical}` : base;
+  const target = `${base}/v1/og.${ext}`;
+  if (!env.SIGNING_KEY) return canonical ? `${target}?${canonical}` : target;
   const sig = await signQuery(canonical, env.SIGNING_KEY);
-  return `${base}?${canonical}&sig=${sig}`;
+  return `${target}?${canonical}&sig=${sig}`;
 }
 
-async function handleImage(request, env, ctx, url, ext) {
+async function handleImage(request, env, ctx, url, ext, prefix) {
   const canonical = canonicalQuery(imageParams(url.searchParams));
 
   if (env.SIGNING_KEY) {
@@ -104,8 +100,10 @@ async function handleImage(request, env, ctx, url, ext) {
   }
 
   const cache = caches.default;
+  // The prefix is part of the key. One worker can be mounted at more than one
+  // path, and two mounts must not serve each other's renders.
   const cacheKey = new Request(
-    `${new URL(request.url).origin}/v1/og.${ext}?${canonical}`,
+    `${new URL(request.url).origin}${prefix}/v1/og.${ext}?${canonical}`,
     { method: 'GET' }
   );
   const hit = await cache.match(cacheKey);
@@ -149,10 +147,10 @@ async function handleImage(request, env, ctx, url, ext) {
   return response;
 }
 
-async function handleTags(request, env, url, mode) {
+async function handleTags(base, env, url, mode) {
   const meta = parseMeta(url.searchParams);
   const spec = parseSpec(url.searchParams);
-  const imageUrl = await buildImageUrl(request, env, url.searchParams, 'png');
+  const imageUrl = await buildImageUrl(base, env, url.searchParams, 'png');
 
   const image = {
     url: imageUrl,
@@ -206,36 +204,46 @@ export default {
     }
 
     const url = new URL(request.url);
-    const path = url.pathname.replace(/\/+$/, '') || '/';
+    const { base, prefix } = resolveBase(request.url, env);
+    const path = routePath(url.pathname, prefix);
+
+    if (path === null) {
+      return fail(404, 'not mounted here', `This service is mounted at ${prefix || '/'}.`);
+    }
 
     try {
       switch (path) {
         case '/':
-          return new Response(docsPage(serviceOrigin(request, env)), {
+          return new Response(docsPage(base), {
             headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' },
           });
 
         case '/health':
-          return json({ ok: true, service: 'og-cdn', time: new Date().toISOString() });
+          return json({
+            ok: true,
+            service: 'og-cdn',
+            base,
+            time: new Date().toISOString(),
+          });
 
         case '/v1/og.png':
-          return handleImage(request, env, ctx, url, 'png');
+          return handleImage(request, env, ctx, url, 'png', prefix);
 
         case '/v1/og.svg':
-          return handleImage(request, env, ctx, url, 'svg');
+          return handleImage(request, env, ctx, url, 'svg', prefix);
 
         case '/v1/tags':
-          return handleTags(request, env, url, 'tags');
+          return handleTags(base, env, url, 'tags');
 
         case '/v1/tags.html':
-          return handleTags(request, env, url, 'html');
+          return handleTags(base, env, url, 'html');
 
         case '/v1/meta':
-          return handleTags(request, env, url, 'meta');
+          return handleTags(base, env, url, 'meta');
 
         case '/v1/embed.js':
           return new Response(
-            embedScript(serviceOrigin(request, env), { signed: Boolean(env.SIGNING_KEY) }),
+            embedScript(base, { signed: Boolean(env.SIGNING_KEY) }),
             {
               headers: {
                 'content-type': 'text/javascript; charset=utf-8',
@@ -255,7 +263,7 @@ export default {
           });
 
         default:
-          return fail(404, 'no such route', 'See / for the route list.');
+          return fail(404, 'no such route', `See ${base}/ for the route list.`);
       }
     } catch (err) {
       return fail(500, 'unhandled error', String(err && err.message ? err.message : err));

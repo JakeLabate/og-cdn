@@ -4,7 +4,7 @@
  * A page drops one tag, sets its brand once as data attributes, and every
  * page under it gets a card without touching the head by hand:
  *
- *   <script src="https://og.example.com/v1/embed.js"
+ *   <script src="https://cdn.example.com/open-graph/v1/embed.js"
  *           data-theme="indigo"
  *           data-accent="#2dd4bf"
  *           data-logo="https://example.com/logo.svg"
@@ -30,12 +30,12 @@ const VISUAL_KEYS = [
 
 const META_KEYS = ['url', 'type', 'locale', 'card', 'twitter', 'alt'];
 
-export function embedScript(origin, { signed = false } = {}) {
+export function embedScript(base, { signed = false } = {}) {
   return `/* og-cdn embed. Configure with data attributes on the script tag. */
 (function () {
   'use strict';
 
-  var ORIGIN = ${JSON.stringify(origin)};
+  var BASE = ${JSON.stringify(base)};
   var SIGNED = ${signed ? 'true' : 'false'};
   var VISUAL = ${JSON.stringify(VISUAL_KEYS)};
   var META = ${JSON.stringify(META_KEYS)};
@@ -159,7 +159,7 @@ export function embedScript(origin, { signed = false } = {}) {
   /* Signed path: only the worker can mint a valid sig, so ask it. */
   function applyRemote(cfg) {
     var all = query(cfg, VISUAL.concat(META));
-    return fetch(ORIGIN + '/v1/tags?' + all.toString())
+    return fetch(BASE + '/v1/tags?' + all.toString())
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
         if (!data) return null;
@@ -171,7 +171,7 @@ export function embedScript(origin, { signed = false } = {}) {
       .catch(function () { return null; });
   }
 
-  var api = { config: {}, imageUrl: '', tags: {}, refresh: refresh, origin: ORIGIN };
+  var api = { config: {}, imageUrl: '', tags: {}, refresh: refresh, base: BASE };
 
   function refresh(overrides) {
     var cfg = derive(attrs(script));
@@ -180,7 +180,7 @@ export function embedScript(origin, { signed = false } = {}) {
 
     if (SIGNED) return applyRemote(cfg);
 
-    var url = ORIGIN + '/v1/og.png?' + query(cfg, VISUAL).toString();
+    var url = BASE + '/v1/og.png?' + query(cfg, VISUAL).toString();
     api.imageUrl = url;
     api.tags = applyLocal(cfg, url);
     return Promise.resolve(api);

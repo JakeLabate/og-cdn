@@ -16,10 +16,14 @@ globs = ["**/*.wasm"]
 fallthrough = true
 
 [vars]
-# Set this once the service sits behind a custom hostname, so generated
-# og:image URLs are absolute against the public origin rather than the
-# workers.dev origin a build box happened to hit.
-# PUBLIC_ORIGIN = "https://og.jakelabate.com"
+# The one setting that matters in production. Give it the full absolute base,
+# path included. Routing strips this path, and every generated og:image URL is
+# absolute against it, so a build box hitting the workers.dev origin still
+# emits tags pointing at the public hostname.
+PUBLIC_BASE = "https://cdn.jakelabate.com/open-graph"
+
+# Optional. Restrict which hosts a logo may be fetched from.
+# LOGO_ALLOWED_HOSTS = "jakelabate.com,cdn.jakelabate.com"
 
 # Optional. Set with: wrangler secret put SIGNING_KEY
 # When present, /v1/og.png requires a matching sig and /v1/tags mints it.
@@ -27,7 +31,16 @@ fallthrough = true
 [observability]
 enabled = true
 
-# Uncomment after the DNS record exists in the zone.
-# [[routes]]
-# pattern = "og.jakelabate.com"
-# custom_domain = true
+# A path scoped route, so the rest of cdn.jakelabate.com is untouched.
+#
+# This requires a proxied DNS record for the hostname. A Workers route only
+# fires on traffic that reaches Cloudflare's edge, and without a record there
+# is nothing to resolve. If cdn.jakelabate.com does not already exist, add:
+#
+#   Type AAAA   Name cdn   Content 100::   Proxy ON
+#
+# The 100:: discard prefix is the standard placeholder for a hostname that
+# exists only to be intercepted by a Worker.
+[[routes]]
+pattern = "cdn.jakelabate.com/open-graph*"
+zone_name = "jakelabate.com"
