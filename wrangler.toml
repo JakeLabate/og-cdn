@@ -31,16 +31,23 @@ PUBLIC_BASE = "https://cdn.jakelabate.com/open-graph"
 [observability]
 enabled = true
 
-# A path scoped route, so the rest of cdn.jakelabate.com is untouched.
+# A custom domain, because the hostname is dedicated to this worker.
 #
-# This requires a proxied DNS record for the hostname. A Workers route only
-# fires on traffic that reaches Cloudflare's edge, and without a record there
-# is nothing to resolve. If cdn.jakelabate.com does not already exist, add:
+# `wrangler deploy` creates the proxied DNS record and provisions the
+# certificate. Nothing to add by hand, and no grey cloud to get wrong.
 #
-#   Type AAAA   Name cdn   Content 100::   Proxy ON
+# The worker owns the whole hostname, and serves under /open-graph because the
+# mount lives in code rather than in the route. If cdn.jakelabate.com later has
+# to serve something else, swap this block for the path scoped route below and
+# every published URL keeps working:
 #
-# The 100:: discard prefix is the standard placeholder for a hostname that
-# exists only to be intercepted by a Worker.
+#   [[routes]]
+#   pattern = "cdn.jakelabate.com/open-graph*"
+#   zone_name = "jakelabate.com"
+#
+# A route does not create a hostname, so that swap also means adding a proxied
+# AAAA record for cdn pointing at 100::, the IPv6 discard prefix. Grey cloud
+# means Cloudflare answers with the origin address and never runs the worker.
 [[routes]]
-pattern = "cdn.jakelabate.com/open-graph*"
-zone_name = "jakelabate.com"
+pattern = "cdn.jakelabate.com"
+custom_domain = true

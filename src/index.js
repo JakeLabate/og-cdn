@@ -208,6 +208,12 @@ export default {
     const path = routePath(url.pathname, prefix);
 
     if (path === null) {
+      // On a custom domain the worker owns the whole hostname, so the root is
+      // a wrong turn rather than someone else's territory. Send it to the
+      // mount instead of returning a dead end.
+      if (url.pathname === '/' && prefix) {
+        return Response.redirect(base + '/', 302);
+      }
       return fail(404, 'not mounted here', `This service is mounted at ${prefix || '/'}.`);
     }
 

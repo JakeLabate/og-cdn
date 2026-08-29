@@ -299,8 +299,8 @@ rest of that hostname is untouched. One setting drives it:
 PUBLIC_BASE = "https://cdn.jakelabate.com/open-graph"
 
 [[routes]]
-pattern = "cdn.jakelabate.com/open-graph*"
-zone_name = "jakelabate.com"
+pattern = "cdn.jakelabate.com"
+custom_domain = true
 ```
 
 `PUBLIC_BASE` answers two separate questions that are easy to conflate. Its
@@ -314,21 +314,32 @@ To mount somewhere else, change both the route pattern and `PUBLIC_BASE`. To
 serve from the root of a hostname instead, drop the path from `PUBLIC_BASE`
 and use a custom domain rather than a route.
 
-### The DNS record this needs
+### Why a custom domain rather than a route
 
-A Workers route only fires on traffic that reaches Cloudflare's edge, and a
-route on its own does not create a hostname. If `cdn.jakelabate.com` does not
-already exist in the zone, add a proxied record for it:
+`cdn.jakelabate.com` is dedicated to this worker, so a custom domain is the
+right shape. `wrangler deploy` creates the proxied DNS record and provisions
+the certificate. There is nothing to add by hand and no grey cloud to get
+wrong.
 
+The mount lives in code rather than in the route, which is what makes the swap
+cheap later. If that hostname ever has to serve something else, replace the
+custom domain with a path scoped route:
+
+```toml
+[[routes]]
+pattern = "cdn.jakelabate.com/open-graph*"
+zone_name = "jakelabate.com"
 ```
-Type AAAA   Name cdn   Content 100::   Proxy ON (orange)
-```
 
-`100::` is the IPv6 discard prefix, the standard placeholder for a hostname
-that exists only to be intercepted by a Worker. The record must be proxied.
-Grey cloud means Cloudflare answers with the origin address and never runs the
-Worker, which is the usual reason a correct route appears to do nothing. This
-is independent of how the apex record is configured.
+Every published URL keeps working, because the path never came from the route.
+A route does not create a hostname, though, so that swap also means adding a
+proxied `AAAA` record for `cdn` pointing at `100::`, the IPv6 discard prefix.
+It must be orange clouded: grey cloud means Cloudflare answers with the origin
+address and never runs the worker, which is the usual reason a correct looking
+route does nothing.
+
+Because the worker owns the hostname, `cdn.jakelabate.com/` redirects to the
+mount rather than returning a dead end.
 
 ## Fonts
 

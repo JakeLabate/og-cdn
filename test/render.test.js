@@ -535,6 +535,9 @@ console.log('\nmounting under a path');
   check('a sibling path is not ours', routePath('/other/thing', '/open-graph') === null);
   check('a prefix that is only a string prefix is not ours',
     routePath('/open-graphics/v1/og.png', '/open-graph') === null);
+  // The hostname root is outside the mount. On a custom domain the worker
+  // owns the hostname, so the router redirects it rather than 404ing, but the
+  // routing layer still has to report it as outside.
   check('the bare hostname root is not ours', routePath('/', '/open-graph') === null);
 
   // Unmounted, the service still works at a hostname root.
