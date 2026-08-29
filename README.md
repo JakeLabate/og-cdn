@@ -105,17 +105,46 @@ captions opened by 0.012em.
 
 ### Space
 
-An 8 point grid. Every padding, gap and offset is a whole number of grid
-units, named by relationship rather than pixels:
+An 8 point grid, but templates never name a number. They name a relationship,
+and the system resolves it:
 
 ```
-hairline 8   tight 16   snug 24   base 32   loose 40
-section 48   gutter 56  page 64   wide 80
+stack    related 24   group 32   section 48
+inline   tight 8      base 16    group 40
+pad      card 24      panel 32   page 56   pageTop 64
 ```
 
-One page margin on all four sides of every template. Rules and borders are not
-spacing and do not sit on the grid, because they are optical weights, so they
-have their own small set.
+Three rules govern those values.
+
+**Proximity.** Related things sit closer than unrelated things, and the steps
+between related, group and section are clearly separated rather than adjacent,
+so the difference reads as intent.
+
+**A gap between two elements must exceed the leading inside them.** This is
+the rule the previous version broke: the headline sat 8 pixels above its deck
+while the deck's own lines were 14 pixels apart, so the two read as one block.
+A gate now checks it.
+
+**Vertical and horizontal are different axes** and do not share values. A row
+of inline items reads as a unit at spacing that looks cramped in a stack.
+
+`pageTop` is one unit larger than `page` because the accent bar occupies the
+top edge, so content clears it rather than appearing to start higher than the
+side margins. Rules and borders are optical weights, not spacing, so they sit
+off the grid in their own set.
+
+### Line allocation
+
+The headline is the message and the deck is a supporting line, not a
+paragraph, so the deck clamps to one line and the headline takes the rest.
+Truncating the deck costs a qualifier; truncating the headline costs the point
+of the card.
+
+How many lines the headline gets is a property of the frame, not a preference.
+`article` carries a head row and a byline as well as the body, so it holds one
+fewer line than `editorial`, which carries only body and footer. `split` is a
+tall narrow column and holds more. The overflow gate fails the build if any of
+those capacities is wrong, so they are measured rather than chosen.
 
 ### Enforced, not intended
 
@@ -123,7 +152,11 @@ A scale only means something if a template cannot step off it. `sp()` and
 `type()` record every value they return, and `npm test` fails the build if:
 
 - any rendered size is not a step on the scale
-- any space is not a whole grid unit
+- any space is not a named token from the relationship vocabulary
+- a gap between elements does not clear the leading inside them
+- the stack and inline scales collapse into one set of values
+- any declared spacing token goes unused, which would mean the vocabulary
+  claims a distinction it does not make
 - the scale is not the ratio applied to the base
 - fewer than four of the seven steps are used, which would mean the middle of
   the scale is decorative

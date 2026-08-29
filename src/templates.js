@@ -13,9 +13,14 @@
  */
 
 import {
+  INLINE,
   LEADING,
+  LINES,
+  headlineLines,
   MEASURE_EM,
+  PAD,
   SPACE,
+  STACK,
   STROKE,
   TRACKING,
   TYPE,
@@ -43,13 +48,25 @@ export function spacesUsed() {
 /* Token accessors -------------------------------------------------------- */
 
 /**
- * A space, in card pixels at the current scale. Records the grid units it was
- * asked for so the suite can confirm every space on a card is a whole unit.
+ * Templates never name a number, only a relationship. Each accessor records
+ * the token it resolved so the suite can prove no template reached past the
+ * system for an arbitrary value.
  */
-function sp(units, k) {
-  usedSpaces.push(units);
+function resolve(kind, table, role, k) {
+  const units = table[role];
+  if (units === undefined) throw new Error(`no ${kind} token named ${role}`);
+  usedSpaces.push({ kind, role, units });
   return Math.round(space(units) * k);
 }
+
+/** Vertical gap between stacked elements. */
+const stack = (role, k) => resolve('stack', STACK, role, k);
+
+/** Horizontal gap between items on one line. */
+const inline = (role, k) => resolve('inline', INLINE, role, k);
+
+/** Padding. */
+const pad = (role, k) => resolve('pad', PAD, role, k);
 
 /**
  * A complete type style: size from the scale, leading and tracking from the
@@ -207,12 +224,16 @@ function frame(spec, k, extra = {}) {
     flexDirection: 'column',
     width: '100%',
     height: '100%',
-    padding: sp(SPACE.gutter, k),
+    paddingTop: pad('pageTop', k),
+    paddingRight: pad('page', k),
+    paddingBottom: pad('page', k),
+    paddingLeft: pad('page', k),
     ...extra,
   };
 }
 
-function titleText(spec, tokens, k, lines) {
+function titleText(spec, tokens, k) {
+  const allowed = headlineLines(spec.template, Boolean(spec.subtitle));
   return text(spec.title, {
     ...type(titleStepFor(spec.template, spec.title, { hasDeck: Boolean(spec.subtitle) }), k, {
       leading: 'display',
@@ -220,11 +241,11 @@ function titleText(spec, tokens, k, lines) {
       family: DISPLAY,
     }),
     color: tokens.fg,
-    ...clamp(lines),
+    ...clamp(allowed),
   });
 }
 
-function subtitleText(spec, tokens, k, { lines = 2, step = TYPE.body } = {}) {
+function subtitleText(spec, tokens, k, { lines = LINES.deck, step = TYPE.body } = {}) {
   if (!spec.subtitle) return null;
   return text(
     spec.subtitle,
@@ -265,10 +286,10 @@ function footerRow(spec, tokens, k, { withLogo = true } = {}) {
       alignItems: 'center',
       justifyContent: 'space-between',
       borderTop: `${stroke('hairline', k)}px solid ${tokens.rule}`,
-      paddingTop: sp(SPACE.tight, k),
-      marginTop: sp(SPACE.tight, k),
+      paddingTop: stack('related', k),
+      marginTop: stack('section', k),
     },
-    box({ alignItems: 'center', gap: sp(SPACE.tight, k) }, ...left),
+    box({ alignItems: 'center', gap: inline('base', k) }, ...left),
     mark
   );
 }
@@ -278,15 +299,15 @@ function footerRow(spec, tokens, k, { withLogo = true } = {}) {
 function editorial(spec, tokens) {
   const k = spec.width / 1200;
 
-  const stack = [];
+  const parts = [];
   const mark = logoMark(spec, k);
   if (mark) {
-    stack.push(box({ alignSelf: spec.align === 'center' ? 'center' : 'flex-start' }, mark));
+    parts.push(box({ alignSelf: spec.align === 'center' ? 'center' : 'flex-start' }, mark));
   }
   // Three lines only when there is no subtitle competing for the space.
-  stack.push(titleText(spec, tokens, k, 3));
-  const sub = subtitleText(spec, tokens, k, { lines: 2 });
-  if (sub) stack.push(sub);
+  parts.push(titleText(spec, tokens, k));
+  const sub = subtitleText(spec, tokens, k);
+  if (sub) parts.push(sub);
 
   return shell(
     spec,
@@ -297,12 +318,12 @@ function editorial(spec, tokens) {
         {
           flexDirection: 'column',
           justifyContent: 'center',
-          gap: sp(SPACE.hairline, k),
+          gap: stack('related', k),
           flexGrow: 1,
           alignItems: spec.align === 'center' ? 'center' : 'flex-start',
           textAlign: spec.align === 'center' ? 'center' : 'left',
         },
-        ...stack
+        ...parts
       ),
       footerRow(spec, tokens, k, { withLogo: false })
     )
@@ -318,9 +339,9 @@ function stat(spec, tokens) {
     box(
       {
         flexDirection: 'column',
-        gap: sp(SPACE.hairline, k),
+        gap: stack('related', k),
         borderLeft: `${stroke('marker', k)}px solid ${tokens.accent}`,
-        paddingLeft: sp(SPACE.tight, k),
+        paddingLeft: pad('marker', k),
       },
       text(s.value, {
         ...type(TYPE.titleLg, k, { leading: 'display', tracking: 'display', family: DISPLAY }),
@@ -335,9 +356,9 @@ function stat(spec, tokens) {
     spec,
     tokens,
     box(
-      frame(spec, k, { justifyContent: 'space-between' }),
-      titleText(spec, tokens, k, 2),
-      box({ gap: sp(SPACE.loose, k), flexGrow: 1, alignItems: 'center' }, ...cells),
+      frame(spec, k, { justifyContent: 'space-between', gap: stack('group', k) }),
+      titleText(spec, tokens, k),
+      box({ gap: inline('group', k), flexGrow: 1, alignItems: 'center' }, ...cells),
       footerRow(spec, tokens, k)
     )
   );
@@ -347,8 +368,8 @@ function minimal(spec, tokens) {
   const k = spec.width / 1200;
   const kids = [
     logoMark(spec, k),
-    titleText(spec, tokens, k, spec.subtitle ? 2 : 3),
-    subtitleText(spec, tokens, k, { lines: 2 }),
+    titleText(spec, tokens, k),
+    subtitleText(spec, tokens, k),
   ];
   if (spec.site) {
     kids.push(
@@ -368,7 +389,7 @@ function minimal(spec, tokens) {
         alignItems: 'center',
         justifyContent: 'center',
         textAlign: 'center',
-        gap: sp(SPACE.tight, k),
+        gap: stack('related', k),
       }),
       ...kids
     )
@@ -380,7 +401,7 @@ function code(spec, tokens) {
 
   const dot = space(SPACE.tight);
   const chrome = box(
-    { alignItems: 'center', gap: sp(SPACE.hairline, k) },
+    { alignItems: 'center', gap: inline('tight', k) },
     ...['#ff5f57', '#febc2e', '#28c840'].map((c) =>
       h('div', {
         style: {
@@ -402,7 +423,7 @@ function code(spec, tokens) {
         family: MONO,
       }),
       color: tokens.fg,
-      ...clamp(2),
+      ...clamp(headlineLines('code', Boolean(spec.subtitle))),
     }),
   ];
 
@@ -424,11 +445,11 @@ function code(spec, tokens) {
       box(
         {
           flexDirection: 'column',
-          gap: sp(SPACE.tight, k),
+          gap: stack('related', k),
           backgroundColor: tokens.bgAlt,
           border: `${stroke('hairline', k)}px solid ${tokens.rule}`,
-          borderRadius: sp(SPACE.tight, k),
-          padding: sp(SPACE.snug, k),
+          borderRadius: space(SPACE.tight),
+          padding: pad('card', k),
           flexGrow: 1,
         },
         ...inner
@@ -454,7 +475,7 @@ function split(spec, tokens) {
       alignItems: 'center',
       justifyContent: 'center',
       flexDirection: 'column',
-      padding: sp(SPACE.base, k),
+      padding: pad('panel', k),
     },
     logoMark(spec, k, space(SPACE.wide) * 2),
     !spec.logo && spec.site
@@ -474,12 +495,12 @@ function split(spec, tokens) {
     {
       flexDirection: 'column',
       justifyContent: 'center',
-      gap: sp(SPACE.tight, k),
+      gap: stack('related', k),
       width: spec.width - panelWidth,
-      padding: sp(SPACE.gutter, k),
+      padding: pad('page', k),
     },
-    titleText(spec, tokens, k, 4),
-    subtitleText(spec, tokens, k, { lines: 2, step: TYPE.caption }),
+    titleText(spec, tokens, k),
+    subtitleText(spec, tokens, k, { step: TYPE.caption }),
     spec.logo && spec.site
       ? captionText(spec.site, tokens, k, {
           color: tokens.accent,
@@ -515,20 +536,20 @@ function quote(spec, tokens) {
     spec,
     tokens,
     box(
-      frame(spec, k, { justifyContent: 'center', gap: sp(SPACE.tight, k) }),
+      frame(spec, k, { justifyContent: 'center', gap: stack('related', k) }),
       text('\u201C', {
         ...type(TYPE.lead, k, { leading: 'flush', family: DISPLAY }),
         color: tokens.accent,
       }),
-      titleText(spec, tokens, k, 3),
+      titleText(spec, tokens, k),
       attribution.length
         ? box(
             {
               alignItems: 'center',
-              gap: sp(SPACE.tight, k),
+              gap: inline('base', k),
               borderLeft: `${stroke('marker', k)}px solid ${tokens.accent}`,
-              paddingLeft: sp(SPACE.tight, k),
-              marginTop: sp(SPACE.hairline, k),
+              paddingLeft: pad('marker', k),
+              marginTop: stack('group', k),
             },
             logoMark(spec, k, space(SPACE.wide)),
             box({ flexDirection: 'column' }, ...attribution)
@@ -543,9 +564,9 @@ function banner(spec, tokens) {
   const k = spec.width / 1200;
 
   const copy = box(
-    { flexDirection: 'column', gap: sp(SPACE.hairline, k), flexGrow: 1 },
-    titleText(spec, tokens, k, 2),
-    subtitleText(spec, tokens, k, { lines: 2, step: TYPE.caption }),
+    { flexDirection: 'column', gap: stack('related', k), flexGrow: 1 },
+    titleText(spec, tokens, k),
+    subtitleText(spec, tokens, k, { step: TYPE.caption }),
     spec.site
       ? captionText(spec.site, tokens, k, {
           color: tokens.accent,
@@ -564,8 +585,8 @@ function banner(spec, tokens) {
         width: '100%',
         height: '100%',
         alignItems: 'center',
-        gap: sp(SPACE.loose, k),
-        padding: sp(SPACE.gutter, k),
+        gap: inline('group', k),
+        padding: pad('page', k),
       },
       logoMark(spec, k, space(SPACE.wide) * 2),
       copy
@@ -608,11 +629,11 @@ function article(spec, tokens) {
     {
       flexDirection: 'column',
       justifyContent: 'center',
-      gap: sp(SPACE.tight, k),
+      gap: stack('related', k),
       flexGrow: 1,
     },
-    titleText(spec, tokens, k, spec.subtitle ? 2 : 3),
-    subtitleText(spec, tokens, k, { lines: 2, step: TYPE.caption })
+    titleText(spec, tokens, k),
+    subtitleText(spec, tokens, k, { step: TYPE.caption })
   );
 
   return shell(
@@ -626,9 +647,10 @@ function article(spec, tokens) {
         ? box(
             {
               alignItems: 'center',
-              gap: sp(SPACE.hairline, k),
+              gap: inline('tight', k),
               borderTop: `${stroke('hairline', k)}px solid ${tokens.rule}`,
-              paddingTop: sp(SPACE.tight, k),
+              paddingTop: stack('related', k),
+              marginTop: stack('section', k),
             },
             ...byline
           )

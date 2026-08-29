@@ -107,6 +107,51 @@ export function space(units) {
   return Math.round(units) * GRID;
 }
 
+/* Spatial relationships -------------------------------------------------- */
+
+/**
+ * Space encodes relationship, so templates ask for a relationship rather than
+ * a number. Three rules govern the values:
+ *
+ *   Proximity. Related things sit closer than unrelated things, and the steps
+ *   between related, group and section are clearly different, not adjacent.
+ *
+ *   Space between two elements must exceed the leading inside either of them.
+ *   A headline eight pixels above its deck reads as one blob when the deck's
+ *   own lines are fourteen pixels apart. That was the bug this replaced.
+ *
+ *   Vertical and horizontal gaps are different axes and do not share values.
+ *   A row of inline items reads as a unit at spacing that would look cramped
+ *   in a stack.
+ */
+
+/** Vertical gaps between stacked elements. */
+export const STACK = {
+  related: SPACE.snug,     // a headline and the deck that qualifies it
+  group: SPACE.base,       // a mark and the block it sits above
+  section: SPACE.section,  // content and the footer beneath it
+};
+
+/** Horizontal gaps between items on one line. */
+export const INLINE = {
+  tight: SPACE.hairline,  // a byline and its separator dot
+  base: SPACE.tight,      // a site name and an author
+  group: SPACE.loose,     // a mark and the copy beside it
+};
+
+/**
+ * Padding. `pageTop` clears the accent bar, which occupies the top edge, so
+ * content sits one whole unit clear of it rather than appearing to start
+ * higher than the side margins.
+ */
+export const PAD = {
+  page: SPACE.gutter,
+  pageTop: SPACE.page,
+  card: SPACE.snug,
+  panel: SPACE.base,
+  marker: SPACE.tight,
+};
+
 /* Strokes ---------------------------------------------------------------- */
 
 /**
@@ -135,6 +180,47 @@ export function apparentPt(sizePx, cardWidth) {
   return sizePx * (PREVIEW_WIDTH / cardWidth);
 }
 
+/* Line allocation -------------------------------------------------------- */
+
+/**
+ * How many lines each element gets before it clamps.
+ *
+ * The headline is the message and the deck is a supporting line, not a
+ * paragraph, so when a card carries both, the headline takes the lines and the
+ * deck takes one. Truncating the deck costs a qualifier; truncating the
+ * headline costs the point of the card.
+ *
+ * A card carrying a headline alone gets the same total, since the budget is
+ * what the frame can hold, not what any one element deserves.
+ */
+export const LINES = {
+  deck: 1,
+};
+
+/**
+ * Headline capacity per template, because a frame's capacity is a property of
+ * the frame. `article` carries a head row and a byline as well as the body, so
+ * it holds one fewer line than `editorial`, which carries only body and
+ * footer. `split` is a tall narrow column and holds more. These are measured
+ * against the card, not chosen: the overflow gate fails the build if any of
+ * them is wrong.
+ */
+export const HEADLINE_LINES = {
+  editorial: { solo: 3, withDeck: 3 },
+  article: { solo: 3, withDeck: 2 },
+  minimal: { solo: 3, withDeck: 2 },
+  split: { solo: 4, withDeck: 4 },
+  banner: { solo: 3, withDeck: 2 },
+  quote: { solo: 2, withDeck: 2 },
+  stat: { solo: 2, withDeck: 2 },
+  code: { solo: 2, withDeck: 2 },
+};
+
+export function headlineLines(template, hasDeck) {
+  const entry = HEADLINE_LINES[template] || HEADLINE_LINES.editorial;
+  return hasDeck ? entry.withDeck : entry.solo;
+}
+
 /* Title sizing ----------------------------------------------------------- */
 
 /** Where each template's headline starts on the scale. */
@@ -144,7 +230,7 @@ export const TITLE_STEP = {
   article: TYPE.display,
   banner: TYPE.titleLg,
   split: TYPE.titleLg,
-  stat: TYPE.titleLg,
+  stat: TYPE.title,
   quote: TYPE.titleLg,
   code: TYPE.body,
 };

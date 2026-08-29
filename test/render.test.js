@@ -19,9 +19,14 @@ import { PATTERNS, TEMPLATES, THEMES } from '../src/theme.js';
 import { sizesUsed, spacesUsed } from '../src/templates.js';
 import {
   GRID,
+  INLINE,
   MIN_APPARENT_PT,
   MIN_SIZE,
+  PAD,
   PREVIEW_WIDTH,
+  STACK,
+  HEADLINE_LINES,
+  LINES,
   TYPE_BASE,
   TYPE_RATIO,
   TYPE_STEPS,
@@ -413,6 +418,7 @@ console.log('\ndesign system conformance');
   const offScale = new Set();
   const offGrid = new Set();
   const stepsSeen = new Set();
+  const rolesSeen = new Set();
 
   for (const template of TEMPLATES) {
     for (const qs of probes) {
@@ -423,15 +429,63 @@ console.log('\ndesign system conformance');
         if (px !== TYPE_STEPS[step]) offScale.add(`${template}: ${px}px is not step ${step}`);
         if (!TYPE_STEPS.includes(px)) offScale.add(`${template}: ${px}px is not on the scale`);
       }
-      for (const units of spacesUsed()) {
-        if (!Number.isInteger(units)) offGrid.add(`${template}: ${units} is not a whole grid unit`);
+      for (const { kind, role, units } of spacesUsed()) {
+        rolesSeen.add(`${kind}.${role}`);
+        const table = { stack: STACK, inline: INLINE, pad: PAD }[kind];
+        if (!table || table[role] !== units) {
+          offGrid.add(`${template}: ${kind}.${role} is not a system token`);
+        }
+        if (!Number.isInteger(units)) {
+          offGrid.add(`${template}: ${kind}.${role} is ${units}, not a whole grid unit`);
+        }
       }
     }
   }
 
   check('every rendered size is a step on the type scale', offScale.size === 0, [...offScale].slice(0, 3).join(' | '));
-  check('every space is a whole grid unit', offGrid.size === 0, [...offGrid].slice(0, 3).join(' | '));
+  check('every space is a named system token on the grid', offGrid.size === 0, [...offGrid].slice(0, 3).join(' | '));
   check(`grid is ${GRID}pt`, GRID === 8);
+
+  // Proximity. The three stack relationships must be clearly separated, not
+  // adjacent grid units, or "related" and "group" read as the same thing.
+  check('stack relationships are distinct steps apart',
+    STACK.group - STACK.related >= 1 && STACK.section - STACK.group >= 2,
+    `related ${STACK.related}, group ${STACK.group}, section ${STACK.section}`);
+
+  // The rule the old spacing broke: a gap between two elements must exceed
+  // the leading inside them, or they read as one block.
+  const deckLeading = Math.round(TYPE_STEPS[1] * 1.25) - TYPE_STEPS[1];
+  check('the headline to deck gap clears the deck leading',
+    STACK.related * GRID > deckLeading,
+    `${STACK.related * GRID}px gap vs ${deckLeading}px leading`);
+
+  // Vertical and horizontal are different axes and must not collapse into one
+  // shared value, which is how a stack ends up spaced like a row.
+  check('stack and inline scales are distinct',
+    STACK.related !== INLINE.base || STACK.group !== INLINE.group,
+    `stack ${JSON.stringify(STACK)} inline ${JSON.stringify(INLINE)}`);
+
+  check('templates use the relationship vocabulary, not one value',
+    rolesSeen.size >= 6, [...rolesSeen].sort().join(', '));
+
+  // A token nobody uses is a claim the system does not actually make.
+  const declared = [
+    ...Object.keys(STACK).map((r) => `stack.${r}`),
+    ...Object.keys(INLINE).map((r) => `inline.${r}`),
+    ...Object.keys(PAD).map((r) => `pad.${r}`),
+  ];
+  const dead = declared.filter((t) => !rolesSeen.has(t));
+  check('no spacing token is declared but unused', dead.length === 0, dead.join(', '));
+
+  // Line allocation. The headline is the message, so it never gets fewer
+  // lines than the deck that qualifies it.
+  const starved = Object.entries(HEADLINE_LINES).filter(
+    ([, v]) => v.withDeck < LINES.deck || v.solo < v.withDeck
+  );
+  check('the headline is never starved for the deck', starved.length === 0, starved.map(([t]) => t).join(', '));
+  check('every template declares a headline capacity',
+    TEMPLATES.every((t) => HEADLINE_LINES[t]),
+    TEMPLATES.filter((t) => !HEADLINE_LINES[t]).join(', '));
 
   // The scale is generated, not typed out, so a drifted constant is caught.
   const derived = Array.from({ length: TYPE_STEPS.length }, (_, i) =>
