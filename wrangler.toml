@@ -1,0 +1,33 @@
+name = "og-cdn"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+workers_dev = true
+
+# Fonts ship inside the bundle as raw bytes so a render never waits on a
+# third party font host. Subset to latin, roughly 110 KB for all three.
+[[rules]]
+type = "Data"
+globs = ["**/*.ttf"]
+fallthrough = true
+
+[[rules]]
+type = "CompiledWasm"
+globs = ["**/*.wasm"]
+fallthrough = true
+
+[vars]
+# Set this once the service sits behind a custom hostname, so generated
+# og:image URLs are absolute against the public origin rather than the
+# workers.dev origin a build box happened to hit.
+# PUBLIC_ORIGIN = "https://og.jakelabate.com"
+
+# Optional. Set with: wrangler secret put SIGNING_KEY
+# When present, /v1/og.png requires a matching sig and /v1/tags mints it.
+
+[observability]
+enabled = true
+
+# Uncomment after the DNS record exists in the zone.
+# [[routes]]
+# pattern = "og.jakelabate.com"
+# custom_domain = true

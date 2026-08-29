@@ -1,0 +1,26 @@
+{
+  "name": "og-cdn",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Open Graph image and tag generation as an edge API. Cloudflare Worker.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node test/render.test.js",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "@resvg/resvg-wasm": "^2.6.2",
+    "satori": "^0.12.2",
+    "yoga-wasm-web": "^0.3.3"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
