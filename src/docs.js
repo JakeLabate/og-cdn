@@ -104,8 +104,10 @@ export function docsPage(origin) {
   <p>Or let the service write the whole block:</p>
   <pre>curl -s "${origin}/v1/tags.html?title=Hello&amp;site=example.com&amp;url=https://example.com/"</pre>
 
-  <h2>Sized for a message thread</h2>
-  <p>The constraint is not the 1200 by 630 canvas, it is what survives at roughly 300 points wide in a text message. That is close to a quarter size. So there are no label elements at all, no eyebrow and no chip, since both competed for space with the only thing anyone reads at that size. Type starts much larger, nothing renders below 42 pixels which is 11 point once scaled, and long text clamps with an ellipsis rather than shrinking until it fits. Two test gates enforce both the size floor and that no template overflows its own card.</p>
+  <h2>The design system</h2>
+  <p>Type is a modular scale of seven steps, <code>44 55 69 86 107 134 168</code>, a 1.25 ratio applied to a base of 44. The base is the legibility floor rather than a chosen body size: a link preview in a message thread renders around 300 points wide, close to a quarter of the card, so 44 pixels is 11.7 point where it actually gets read.</p>
+  <p>Long headlines step down the scale rather than being multiplied by a factor, and a headline paired with a deck drops one further step. Display headlines stop at 86 and clamp with an ellipsis from there, because a truncated headline someone can read beats a complete one they cannot. There are no label elements, no eyebrow and no chip, since both competed for space with the only thing anyone reads at that size.</p>
+  <p>Space is an 8 point grid, one page margin on all four sides. Every value a template uses is recorded and checked: the build fails if a size is not a step on the scale, if a space is not a whole grid unit, if anything reads below 11 point at preview scale, or if any template overflows its own card.</p>
 
   <h2>Configure from a script tag</h2>
   <p>Drop one tag, set the brand once, and every page under it gets a card. Anything you leave out is read off the page: headline from the h1 or title, description from the meta description, URL from the canonical.</p>

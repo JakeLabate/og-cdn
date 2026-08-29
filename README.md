@@ -60,36 +60,82 @@ const { html } = await res.json();
 // splice html into <head>
 ```
 
-## Sized for a message thread
+## The design system
 
-The design constraint is not the 1200 by 630 canvas, it is what survives being
-shown at roughly 300 points wide in a text message. That is close to a quarter
-size, so a 30 pixel subtitle arrives as 8 point type and nobody reads it.
+Everything measurable lives in `src/scale.js`. Templates make layout decisions
+and nothing else. A template that needs a value the scale does not have is a
+signal the scale is wrong, and the change goes there.
 
-Consequences, all of them deliberate:
+### Type
 
-- **No label elements at all.** No eyebrow, no badge. Both were competing for
-  vertical space with the only thing anyone reads at that size, and both were
-  illegible themselves. What is left on a card is a headline, an optional
-  subtitle, an optional mark, and one attribution line.
-- **Everything larger.** Headlines start at 100 to 150 pixels depending on
-  template, subtitles at 50 to 54, footers at 46. Nothing renders below 44
-  pixels, which is 11.7 point once scaled down.
-- **Clamp, do not shrink.** Long text used to shrink until it fit, which just
-  moved the failure from clipped to unreadable. Titles and subtitles now clamp
-  to a line count with an ellipsis and hold their size.
-- **Three stats, not four.** A fourth column pushed each value under the floor.
+A modular scale: one base, one ratio, seven steps.
 
-Two gates in `npm test` enforce this rather than leaving it as an intention:
+```
+44   55   69   86   107   134   168
+```
 
-- Every font size on every template, across four content extremes, is checked
-  at its apparent size and must clear 11 point.
-- Every template is rendered a second time with the canvas height unset, and
-  the natural height of the content is compared against the card it has to fit
-  in. This is what catches a clipped footer, which a size floor cannot see.
+The base is not a body size somebody liked. It is the legibility floor. A link
+preview in a message thread renders around 300 points wide, close to a quarter
+of the card, so 44 pixels is 11.7 point in the place it actually gets read.
+Deriving the base from that constraint means the smallest step on the scale is
+by definition the smallest readable size, and no template can pick something
+too small.
 
-Both were written after the first version passed the size check and still
-clipped three cards at the bottom edge.
+The ratio is 1.25, a major third. Wide enough that adjacent steps read as
+deliberately different rather than as a mistake.
+
+Steps are named by intent, not index: `caption`, `body`, `lead`, `title`,
+`titleLg`, `display`, `displayLg`.
+
+### Hierarchy
+
+Long headlines step **down the scale** rather than being multiplied by a
+factor, so every rendered size is still a step. A headline paired with a deck
+drops one further step, because two competing display sizes read as an
+argument. Display headlines stop at `title` and clamp from there: below that
+the card stops reading as a headline at preview size, and a truncated headline
+someone can read beats a complete one they cannot.
+
+### Leading and tracking
+
+One value per role rather than a number per element. Display leading is 1.08,
+lead 1.25, body 1.4, caption 1.2. Tracking is expressed in em so it scales
+with what it is applied to: display is tightened by 0.022em, monospace
+captions opened by 0.012em.
+
+### Space
+
+An 8 point grid. Every padding, gap and offset is a whole number of grid
+units, named by relationship rather than pixels:
+
+```
+hairline 8   tight 16   snug 24   base 32   loose 40
+section 48   gutter 56  page 64   wide 80
+```
+
+One page margin on all four sides of every template. Rules and borders are not
+spacing and do not sit on the grid, because they are optical weights, so they
+have their own small set.
+
+### Enforced, not intended
+
+A scale only means something if a template cannot step off it. `sp()` and
+`type()` record every value they return, and `npm test` fails the build if:
+
+- any rendered size is not a step on the scale
+- any space is not a whole grid unit
+- the scale is not the ratio applied to the base
+- fewer than four of the seven steps are used, which would mean the middle of
+  the scale is decorative
+- a headline with a deck does not drop a step
+- anything reads below 11 point at preview scale
+- any template overflows its own card
+
+The last one is the one that keeps earning its place. The first version of
+this cleared the size floor and still clipped three cards at the bottom edge,
+which a size check cannot see. It works by rendering each template a second
+time with the canvas height unset and comparing the natural content height
+against the card it has to fit in.
 
 ## Parameters
 
@@ -240,7 +286,7 @@ src/render.js     satori and resvg, with memoised wasm init
 src/templates.js  the four card layouts as plain element trees
 src/theme.js      palettes, sizes, token resolution
 src/params.js     parsing, clamping, canonical cache key
-src/type.js       the type scale, anchored to apparent size in a preview
+src/scale.js      the design system: type scale, grid, leading, tracking
 src/tags.js       Open Graph and Twitter tag construction
 src/assets.js     remote logo fetching, guards, intrinsic size sniffing
 src/embed.js      the client configuration script, generated per origin

@@ -16,8 +16,17 @@ import { buildTags, tagsToHtml, tagsToObject } from '../src/tags.js';
 import { imageSize, resolveLogo } from '../src/assets.js';
 import { embedScript } from '../src/embed.js';
 import { PATTERNS, TEMPLATES, THEMES } from '../src/theme.js';
-import { sizesUsed } from '../src/templates.js';
-import { MIN_APPARENT_PT, MIN_SIZE, PREVIEW_WIDTH, apparentPt } from '../src/type.js';
+import { sizesUsed, spacesUsed } from '../src/templates.js';
+import {
+  GRID,
+  MIN_APPARENT_PT,
+  MIN_SIZE,
+  PREVIEW_WIDTH,
+  TYPE_BASE,
+  TYPE_RATIO,
+  TYPE_STEPS,
+  apparentPt,
+} from '../src/scale.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
@@ -319,7 +328,7 @@ console.log('\nlegibility floor (message preview)');
     for (const [label, qs] of probes) {
       const spec = parseSpec(new URLSearchParams(qs + '&template=' + template));
       await render(spec);
-      for (const size of sizesUsed()) {
+      for (const { px: size } of sizesUsed()) {
         const pt = apparentPt(size, spec.width);
         if (pt < worst.pt) worst = { pt, where: `${template}/${label} @ ${size}px` };
         if (pt < MIN_APPARENT_PT) {
@@ -344,8 +353,8 @@ console.log('\nlegibility floor (message preview)');
   // A long title must clamp, not shrink past the floor.
   const longSpec = parseSpec(new URLSearchParams('title=' + encodeURIComponent('x'.repeat(400))));
   await render(longSpec);
-  const titlePx = Math.max(...sizesUsed());
-  check('long titles clamp instead of shrinking below the floor', titlePx >= 78, `${titlePx}px`);
+  const titlePx = Math.max(...sizesUsed().map((u) => u.px));
+  check('long titles clamp instead of shrinking below the floor', titlePx >= 86, `${titlePx}px`);
 
   const stripped = parseSpec(new URLSearchParams('eyebrow=nope&badge=nope'));
   check('eyebrow is gone from the spec', !('eyebrow' in stripped));
@@ -389,12 +398,68 @@ console.log('\noverflow (content must fit the canvas)');
   check('lineClamp is actually taking effect', tall - short < 200, `${Math.round(tall)} vs ${Math.round(short)}`);
 }
 
+
+console.log('\ndesign system conformance');
+{
+  // A scale only means something if a template cannot step off it. These two
+  // checks are the reason the scale is worth having: they turn a convention
+  // into something the build enforces.
+  const probes = [
+    'title=Ship%20it',
+    'title=Open%20Graph%20as%20an%20edge%20API&subtitle=The%20card%20and%20the%20markup%20from%20one%20origin&site=example.com&author=Jake%20Labate&stat=312%25%7COrganic&stat=1.4s%7CLCP&stat=98%7CFixed&date=Aug%2029&meta=6%20min%20read',
+    'title=' + encodeURIComponent('word '.repeat(40)) + '&subtitle=' + encodeURIComponent('filler '.repeat(30)) + '&site=example.com&author=Someone',
+  ];
+
+  const offScale = new Set();
+  const offGrid = new Set();
+  const stepsSeen = new Set();
+
+  for (const template of TEMPLATES) {
+    for (const qs of probes) {
+      const spec = parseSpec(new URLSearchParams(qs + '&template=' + template));
+      await render(spec);
+      for (const { px, step } of sizesUsed()) {
+        stepsSeen.add(step);
+        if (px !== TYPE_STEPS[step]) offScale.add(`${template}: ${px}px is not step ${step}`);
+        if (!TYPE_STEPS.includes(px)) offScale.add(`${template}: ${px}px is not on the scale`);
+      }
+      for (const units of spacesUsed()) {
+        if (!Number.isInteger(units)) offGrid.add(`${template}: ${units} is not a whole grid unit`);
+      }
+    }
+  }
+
+  check('every rendered size is a step on the type scale', offScale.size === 0, [...offScale].slice(0, 3).join(' | '));
+  check('every space is a whole grid unit', offGrid.size === 0, [...offGrid].slice(0, 3).join(' | '));
+  check(`grid is ${GRID}pt`, GRID === 8);
+
+  // The scale is generated, not typed out, so a drifted constant is caught.
+  const derived = Array.from({ length: TYPE_STEPS.length }, (_, i) =>
+    Math.round(TYPE_BASE * Math.pow(TYPE_RATIO, i))
+  );
+  check('type scale is the ratio applied to the base', derived.join() === TYPE_STEPS.join(), TYPE_STEPS.join(', '));
+  check('scale base is the legibility floor', TYPE_BASE >= MIN_SIZE, `${TYPE_BASE} vs floor ${MIN_SIZE}`);
+
+  // A scale nobody uses the middle of is really two scales with a gap.
+  check('the scale is actually used, not just its extremes', stepsSeen.size >= 4, `${stepsSeen.size} of ${TYPE_STEPS.length} steps`);
+
+  // Hierarchy: a headline paired with a deck must not sit at the same step as
+  // one carrying the card alone.
+  const solo = parseSpec(new URLSearchParams('title=Open%20Graph%20as%20an%20edge%20API'));
+  await render(solo);
+  const soloTitle = Math.max(...sizesUsed().map((u) => u.px));
+  const decked = parseSpec(new URLSearchParams('title=Open%20Graph%20as%20an%20edge%20API&subtitle=A%20deck'));
+  await render(decked);
+  const deckedTitle = Math.max(...sizesUsed().map((u) => u.px));
+  check('a headline with a deck drops a step', deckedTitle < soloTitle, `${deckedTitle} vs ${soloTitle}`);
+}
+
 console.log('\nno em dashes in source');
 {
   const files = [
     'src/index.js', 'src/render.js', 'src/params.js', 'src/tags.js',
     'src/templates.js', 'src/theme.js', 'src/sign.js', 'src/docs.js',
-    'src/assets.js', 'src/embed.js', 'src/type.js', 'examples/inject-tags.mjs',
+    'src/assets.js', 'src/embed.js', 'src/scale.js', 'examples/inject-tags.mjs',
     'examples/edge-inject.js', 'test/render.test.js', 'README.md',
   ];
   let found = [];
