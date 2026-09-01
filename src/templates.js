@@ -335,16 +335,23 @@ function stat(spec, tokens) {
 
   // Three is the most that stays readable once the card is a thumbnail. A
   // fourth column would push each value below the floor.
-  const cells = spec.stats.slice(0, 3).map((s) =>
+  const shown = spec.stats.slice(0, 3);
+  const valueStep = shown.length >= 3 ? TYPE.title : TYPE.titleLg;
+
+  const cells = shown.map((s) =>
     box(
       {
         flexDirection: 'column',
         gap: stack('related', k),
         borderLeft: `${stroke('marker', k)}px solid ${tokens.accent}`,
         paddingLeft: pad('marker', k),
+        // A flex item defaults to a min width of auto, so three wide figures
+        // would push past the right edge rather than sharing the row.
+        flexShrink: 1,
+        minWidth: 0,
       },
       text(s.value, {
-        ...type(TYPE.titleLg, k, { leading: 'display', tracking: 'display', family: DISPLAY }),
+        ...type(valueStep, k, { leading: 'display', tracking: 'display', family: DISPLAY }),
         color: tokens.fg,
         ...clamp(1),
       }),
@@ -480,10 +487,11 @@ function split(spec, tokens) {
     logoMark(spec, k, space(SPACE.wide) * 2),
     !spec.logo && spec.site
       ? text(spec.site, {
-          ...type(TYPE.lead, k, { leading: 'display', tracking: 'display', family: DISPLAY }),
+          ...type(TYPE.body, k, { leading: 'lead', family: MONO, tracking: 'mono' }),
           color: tokens.fg,
           textAlign: 'center',
-          ...clamp(2),
+          overflowWrap: 'anywhere',
+          ...clamp(3),
         })
       : null
   );

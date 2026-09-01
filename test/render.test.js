@@ -568,6 +568,40 @@ console.log('\nmounting under a path');
     src.includes("BASE + '/v1/og.png?'"));
 }
 
+
+console.log('\nhorizontal overflow');
+{
+  // The height gate cannot see a figure running past the right edge. Satori
+  // emits absolute coordinates, so anything beyond the canvas is an overflow.
+  const satoriMod = await import('satori/wasm');
+  const { buildTree } = await import('../src/templates.js');
+  const fontsFor = [
+    { name: 'Space Grotesk', data: read('fonts/SpaceGrotesk-Bold.ttf'), weight: 700, style: 'normal' },
+    { name: 'IBM Plex Sans', data: read('fonts/IBMPlexSans-Regular.ttf'), weight: 400, style: 'normal' },
+    { name: 'IBM Plex Mono', data: read('fonts/IBMPlexMono-Medium.ttf'), weight: 500, style: 'normal' },
+  ];
+
+  const probes = [
+    ['stat, three wide figures', 'template=stat&title=The%20legibility%20floor&stat=1200px%7CDesign%20canvas&stat=320pt%7CRead%20at&stat=11.7pt%7CFloor&site=example.com'],
+    ['stat, three long labels', 'template=stat&title=Audit&stat=312%25%7COrganic%20sessions&stat=1.4s%7CLargest%20paint&stat=98%7CPages%20fixed&site=example.com'],
+    ['split, long unbroken site', 'template=split&title=Rendered%20at%20the%20edge&subtitle=No%20browser&site=github.com%2FJakeLabate%2Fog-cdn'],
+    ['banner, long site', 'template=banner&title=Cards%20and%20tags&subtitle=One%20origin&site=cdn.jakelabate.com%2Fopen-graph'],
+    ['article, long meta row', 'template=article&title=Headline&subtitle=Deck&author=Jake%20Labate&date=August%2029%2C%202026&meta=12%20minute%20read&site=example.com'],
+  ];
+
+  const over = [];
+  for (const [label, qs] of probes) {
+    const spec = parseSpec(new URLSearchParams(qs));
+    const svg = await satoriMod.default(buildTree(spec), {
+      width: spec.width, height: spec.height, fonts: fontsFor,
+    });
+    const xs = [...svg.matchAll(/x="([\d.-]+)"/g)].map((m) => parseFloat(m[1]));
+    const maxX = xs.length ? Math.max(...xs) : 0;
+    if (maxX > spec.width) over.push(`${label}: reaches ${Math.round(maxX)} of ${spec.width}`);
+  }
+  check('nothing runs past the right edge', over.length === 0, over.join(' | '));
+}
+
 console.log('\nno em dashes in source');
 {
   const files = [
